@@ -106,6 +106,7 @@ namespace RotaAntivirus
                 case "analyser": if (!occupe && DisqueConnu(disque)) Analyse(disque); break;
                 case "arreter": if (arret != null) arret.Cancel(); break;
                 case "reparer": if (!occupe && DisqueConnu(disque) && plan != null && string.Equals(disqueAnalyse, disque, StringComparison.OrdinalIgnoreCase)) Reparer(disque); break;
+                case "isoler": if (!occupe && DisqueConnu(disque) && plan != null && string.Equals(disqueAnalyse, disque, StringComparison.OrdinalIgnoreCase)) Isoler(disque); break;
                 case "ranger": if (!occupe && PeutEcrire(disque)) Ranger(disque); break;
                 case "blocage": if (!occupe && PeutEcrire(disque)) Blocage(disque); break;
                 case "sortir": if (!occupe && PeutEcrire(disque)) Sortir(disque); break;
@@ -180,7 +181,7 @@ namespace RotaAntivirus
                 plan = p; verdict = v; disqueAnalyse = disque; vue = lignes; Fin();
                 Envoyer(new
                 {
-                    type = "resultat", disque = disque, niveau = v.Niveau, titre = v.Titre, bloquants = v.Bloquants, reserves = v.Reserves, aTraiter = v.ATraiter,
+                    type = "resultat", disque = disque, niveau = v.Niveau, titre = v.Titre, bloquants = v.Bloquants, reserves = v.Reserves, aTraiter = v.ATraiter, aReparer = v.AReparer, aIsoler = v.AIsoler,
                     total = p.Total, examines = p.Examines, systeme = systeme, recycler = etat.RecyclerDossier, blocage = etat.Blocage, quarantaine = etat.Quarantaine, archive = archive, annulable = Moteur.PeutAnnuler(disque),
                     message = messageAvant, tronque = p.Elements.Count > MaxLignes, nbElements = p.Elements.Count,
                     elements = lignes.Select((x, i) => new { index = i.ToString(), type = x.Type, libelle = Moteur.Libelle(x.Type), relatif = x.Relatif, detail = x.Detail }).ToList()
@@ -207,10 +208,21 @@ namespace RotaAntivirus
 
         void Reparer(string disque)
         {
-            if (verdict == null || verdict.ATraiter == 0) return;
-            var zone = Moteur.EstDisqueSysteme(disque) ? "\n\nSur le disque de Windows, seuls tes dossiers personnels sont touchés. Windows et Program Files restent intacts." : "\nNe débranche pas le disque.";
-            if (!Confirmer(verdict.ATraiter + " fichier(s) vont être réparés, remplacés ou isolés sur " + disque + ".\n\nRien n'est supprimé : les originaux vont dans _QUARANTAINE_ROTA." + zone + "\n\nContinuer ?")) return;
-            var p = plan; Action2("Réparation en cours", "Réparation", disque, () => Moteur.Appliquer(p, disque, Suivi));
+            if (verdict == null || verdict.AReparer == 0) return;
+            if (!Confirmer(verdict.AReparer + " fichier(s) vont être réparés ou remplacés sur " + disque + " et resteront à leur place.\n\nLes originaux sont gardés dans _QUARANTAINE_ROTA." + TexteZone(disque) + "\n\nContinuer ?")) return;
+            var p = plan; Action2("Réparation en cours", "Réparation", disque, () => Moteur.Appliquer(p, disque, Suivi, false, "reparer"));
+        }
+
+        void Isoler(string disque)
+        {
+            if (verdict == null || verdict.AIsoler == 0) return;
+            if (!Confirmer(verdict.AIsoler + " fichier(s) impossibles à réparer vont être retirés de leur place sur " + disque + " et mis en quarantaine.\n\nRien n'est supprimé, mais un programme isolé ne pourra plus démarrer. Il faudra le retélécharger." + TexteZone(disque) + "\n\nContinuer ?")) return;
+            var p = plan; Action2("Isolement en cours", "Isolement", disque, () => Moteur.Appliquer(p, disque, Suivi, false, "isoler"));
+        }
+
+        static string TexteZone(string disque)
+        {
+            return Moteur.EstDisqueSysteme(disque) ? "\n\nSur le disque de Windows, seuls tes dossiers personnels sont touchés. Windows et Program Files restent intacts." : "\nNe débranche pas le disque.";
         }
 
         void Ranger(string disque)

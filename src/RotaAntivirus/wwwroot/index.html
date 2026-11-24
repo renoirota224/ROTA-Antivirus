@@ -73,7 +73,8 @@
         </div>
         <div id="liste" class="liste" tabindex="0" aria-label="Fichiers concernés"></div>
         <div class="actions">
-          <button id="bReparer" class="btn prim">Réparer et isoler</button>
+          <button id="bReparer" class="btn prim">Réparer</button>
+          <button id="bIsoler" class="btn isoler">Isoler</button>
           <button id="bRanger" class="btn prim">Ranger RECYCLER.BIN</button>
           <button id="bBlocage" class="btn prim">Poser le blocage PlugX</button>
           <button id="bSortir" class="btn prim">Sortir la quarantaine</button>
@@ -103,7 +104,7 @@
         <h1>Préparer un disque client</h1>
         <ol class="etapes">
           <li><strong>Analyser</strong> le disque. Aucun programme n'est lancé.</li>
-          <li><strong>Réparer et isoler</strong> les fichiers touchés.</li>
+          <li><strong>Réparer</strong> les programmes récupérables : ils restent à leur place. <strong>Isoler</strong> ceux qui sont irréparables : ils partent en quarantaine.</li>
           <li><strong>Ranger RECYCLER.BIN</strong> s'il est signalé, ou <strong>poser le blocage PlugX</strong>.</li>
           <li>Retélécharger ce qui a été isolé, puis <strong>sortir la quarantaine</strong> du disque.</li>
           <li>Analyser encore. Livre seulement avec le verdict <strong>Prêt</strong>, après avoir lancé quelques jeux.</li>
@@ -113,7 +114,7 @@
     </section>
   </main>
 
-  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.2.1</span></footer>
+  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.2.2</span></footer>
   <div class="ligne-balayage" aria-hidden="true"></div>
 </div>
 <script src="mission.js"></script>

@@ -48,6 +48,21 @@ try {
     $vz = [Moteur]::Verdict($pz, (New-Object EtatDisque), $true)
     Test-Point 'C: seul le dossier personnel compte' ($vz.ATraiter -eq 1 -and $vz.Reserves[0] -like '1 fichier*Windows*')
 
+    # Reparer et Isoler sont deux actions separees.
+    $d = "$t-d"; [void](New-Item -ItemType Directory -Path "$d\RECYCLER.BIN\1"); [IO.File]::WriteAllText("$d\RECYCLER.BIN\1\CEFHelper.exe", 'faux'); [IO.File]::WriteAllText("$d\RECYCLER.BIN\1\wsc.dll", 'faux2')
+    $pd = [Moteur]::Analyser($d, $null, [Threading.CancellationToken]::None); $vd = [Moteur]::Verdict($pd, [Moteur]::Etat($d), $false)
+    Test-Point 'Compteurs separes' ($vd.AIsoler -eq 2 -and $vd.AReparer -eq 0)
+    $rr = [Moteur]::Appliquer($pd, $d, $null, $true, 'reparer')
+    Test-Point 'Reparer ne touche pas les fichiers a isoler' ($rr.Ok -eq 0 -and (Test-Path -LiteralPath "$d\RECYCLER.BIN\1\CEFHelper.exe") -and -not (Test-Path -LiteralPath "$d\_QUARANTAINE_ROTA"))
+    $ri = [Moteur]::Appliquer($pd, $d, $null, $true, 'isoler')
+    Test-Point 'Isoler retire seulement les fichiers a isoler' ($ri.Ok -eq 2 -and -not (Test-Path -LiteralPath "$d\RECYCLER.BIN\1\CEFHelper.exe"))
+    Test-Point 'Isoler ne pose pas le blocage seul' (-not [Moteur]::Etat($d).Blocage)
+    $ra = [Moteur]::Annuler($d, $true)
+    Test-Point 'Annuler remet les fichiers isoles' ($ra.Ok -eq 2 -and (Test-Path -LiteralPath "$d\RECYCLER.BIN\1\wsc.dll"))
+    $pm = New-Object PlanDisque; foreach ($x in 'REPARER', 'REPARER', 'ISOLER', 'A_VERIFIER') { $el = New-Object ElementPlan; $el.Type = $x; $el.Relatif = "Jeu\$x.exe"; $pm.Elements.Add($el) }
+    $vm = [Moteur]::Verdict($pm, (New-Object EtatDisque), $false)
+    Test-Point 'Comptes Reparer 2 et Isoler 1' ($vm.AReparer -eq 2 -and $vm.AIsoler -eq 1 -and $vm.ATraiter -eq 3)
+
     # Parcours complet : reparer, ranger, sortir, remettre, puis tout annuler.
     $b = "$t-b"; [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\1"); [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\DOCS")
     [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\CEFHelper.exe", 'faux'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\wsc.dll", 'faux2'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\DOCS\doc.bin", 'document')
@@ -68,6 +83,6 @@ try {
     Test-Point 'Deuxieme annulation sans effet' ($a3.Ok -eq 0 -and $a3.Echecs -eq 0)
 }
 finally {
-    foreach ($x in $t, "$t-q", "$t-b", "$t-c") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
+    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
 }
 "Echecs : $echecs"; if ($echecs -gt 0) { exit 1 }

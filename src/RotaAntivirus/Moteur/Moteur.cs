@@ -23,7 +23,7 @@ public class PlanDisque
 
 public class Avancement { public int Fait, Total, Trouves; public string Courant = "", Phase = ""; public List<string> Cibles = new List<string>(); }
 public class EtatDisque { public bool RecyclerDossier, Blocage, Quarantaine; }
-public class VerdictDisque { public string Niveau = "", Titre = ""; public List<string> Bloquants = new List<string>(), Reserves = new List<string>(); public int ATraiter; }
+public class VerdictDisque { public string Niveau = "", Titre = ""; public List<string> Bloquants = new List<string>(), Reserves = new List<string>(); public int ATraiter, AReparer, AIsoler; }
 public class ResultatAction { public int Ok, Echecs; public string Session = ""; public List<string> Messages = new List<string>(); }
 public class InfoQuarantaine { public string Nom = "", Genre = "", Date = ""; public int Fichiers; public long Octets; }
 
@@ -359,6 +359,8 @@ public static class Moteur
         v.Reserves.Add("Ce contrôle reconnaît Expiro, Grenam, PlugX et UPX1, pas tous les virus.");
         v.Reserves.Add("Lance quelques jeux avant de livrer.");
         v.ATraiter = p.Elements.Count(x => TypesAction.Contains(x.Type) && (!systeme || ReparableSurSysteme(x.Relatif)));
+        v.AIsoler = p.Elements.Count(x => x.Type == "ISOLER" && (!systeme || ReparableSurSysteme(x.Relatif)));
+        v.AReparer = v.ATraiter - v.AIsoler;
         int horsZone = p.Elements.Count(x => TypesAction.Contains(x.Type)) - v.ATraiter;
         if (horsZone > 0) v.Reserves.Insert(0, horsZone + " fichier(s) dans Windows ou Program Files ne peuvent pas être réparés pendant que Windows tourne.");
         v.Niveau = v.Bloquants.Count == 0 ? "PRET" : "PAS_PRET";
@@ -445,21 +447,32 @@ public static class Moteur
         r.Messages.Add("Blocage PlugX posé.");
     }
 
-    public static ResultatAction Appliquer(PlanDisque plan, string racineBrute, Action<Avancement> suivi, bool essai = false)
+    static bool Correspond(string type, string filtre)
+    {
+        if (filtre == "isoler") return type == "ISOLER";
+        if (filtre == "reparer") return type != "ISOLER";
+        return true;
+    }
+
+    // filtre : "reparer", "isoler", ou null pour tout traiter.
+    public static ResultatAction Appliquer(PlanDisque plan, string racineBrute, Action<Avancement> suivi, bool essai = false, string filtre = null)
     {
         string racine = Normaliser(racineBrute); bool systeme = !essai && EstDisqueSysteme(racine);
         if (!essai && PcInfecte() > 0) throw new InvalidOperationException("Ce PC porte la marque du virus : il réinfecterait le disque.");
-        var liste = plan.Elements.Where(e => TypesAction.Contains(e.Type) && (!systeme || ReparableSurSysteme(e.Relatif))).ToList(); var r = new ResultatAction();
-        if (systeme && liste.Count == 0) { r.Messages.Add("Aucun fichier réparable dans tes dossiers personnels."); return r; }
-        var dir = Path.Combine(racine, DossierQuarantaine, "antivirus-" + DateTime.Now.ToString("yyyyMMdd-HHmmss")); Directory.CreateDirectory(dir);
+        var liste = plan.Elements.Where(e => TypesAction.Contains(e.Type) && Correspond(e.Type, filtre) && (!systeme || ReparableSurSysteme(e.Relatif))).ToList(); var r = new ResultatAction();
+        if ((systeme || filtre != null) && liste.Count == 0) { r.Messages.Add("Aucun fichier à traiter pour cette action."); return r; }
+        // Chaque action a sa propre session : deux actions rapprochees ne doivent jamais se melanger.
+        string baseDir = Path.Combine(racine, DossierQuarantaine, "antivirus-" + DateTime.Now.ToString("yyyyMMdd-HHmmss")), dir = baseDir;
+        for (int k = 2; Directory.Exists(dir); k++) dir = baseDir + "-" + k;
+        Directory.CreateDirectory(dir);
         r.Session = dir; string man = Path.Combine(dir, "manifeste.tsv"); int i = 0;
         foreach (var e in liste)
         {
-            i++; if (suivi != null) suivi(new Avancement { Phase = "Réparation", Fait = i, Total = liste.Count, Courant = e.Relatif });
+            i++; if (suivi != null) suivi(new Avancement { Phase = filtre == "isoler" ? "Isolement" : "Réparation", Fait = i, Total = liste.Count, Courant = e.Relatif });
             try { TraiterElement(e, dir, i.ToString("D6"), man); r.Ok++; }
             catch (Exception ex) { r.Echecs++; r.Messages.Add("Échec : " + e.Relatif + " : " + ex.Message); }
         }
-        if (!systeme) { try { PoserBlocage(racine, r); } catch (Exception ex) { r.Echecs++; r.Messages.Add("Blocage non posé : " + ex.Message); } }
+        if (!systeme && filtre == null) { try { PoserBlocage(racine, r); } catch (Exception ex) { r.Echecs++; r.Messages.Add("Blocage non posé : " + ex.Message); } }
         return r;
     }
 

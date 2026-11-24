@@ -122,7 +122,8 @@
     (pret ? m.reserves : m.bloquants).forEach((t) => { const li = document.createElement('li'); li.textContent = t; pts.appendChild(li); });
     const aListe = m.elements.length > 0; $('outilsListe').hidden = !aListe; $('liste').hidden = !aListe; dessinerListe();
     const ext = !m.systeme;
-    $('bReparer').hidden = !(m.aTraiter > 0);
+    $('bReparer').hidden = !(m.aReparer > 0); $('bReparer').textContent = 'Réparer (' + m.aReparer + ')';
+    $('bIsoler').hidden = !(m.aIsoler > 0); $('bIsoler').textContent = 'Isoler (' + m.aIsoler + ')';
     $('bRanger').hidden = !(ext && m.recycler);
     $('bBlocage').hidden = !(ext && !m.recycler && !m.blocage);
     $('bSortir').hidden = !(ext && m.quarantaine && m.aTraiter === 0 && !m.recycler);
@@ -140,7 +141,7 @@
     occuper(false); etat.resultat = null; ambiance('alerte'); $('noyau').className = 'noyau'; coeur('ERREUR', '!', 'Opération arrêtée');
     $('titreResultat').textContent = 'Opération impossible'; $('message').hidden = false; $('message').textContent = t;
     $('points').replaceChildren(); $('liste').replaceChildren(); $('liste').hidden = true; $('outilsListe').hidden = true;
-    ['bReparer', 'bRanger', 'bBlocage', 'bSortir', 'bRemettre', 'bAnnuler', 'bRapport'].forEach((b) => { $(b).hidden = true; }); $('bNouvelle').hidden = false;
+    ['bReparer', 'bIsoler', 'bRanger', 'bBlocage', 'bSortir', 'bRemettre', 'bAnnuler', 'bRapport'].forEach((b) => { $(b).hidden = true; }); $('bNouvelle').hidden = false;
     arreterChrono(); mission.vider(); mission.mode('alerte'); telemetrie('ERREUR', 0, 0);
     controle('ecranResultat');
   }
@@ -191,7 +192,7 @@
   }
 
   document.querySelectorAll('.onglet').forEach((b) => b.addEventListener('click', () => choisirVue(b.dataset.vue)));
-  [['bLancer', 'analyser'], ['bNouvelle', 'analyser'], ['bArreter', 'arreter'], ['bReparer', 'reparer'], ['bRanger', 'ranger'], ['bBlocage', 'blocage'], ['bSortir', 'sortir'], ['bRemettre', 'remettre'], ['bAnnuler', 'annuler'], ['bRapport', 'rapport'], ['bActuQ', 'quarantaine'], ['bDossierRapports', 'dossierRapports']].forEach(([id, cmd]) => $(id).addEventListener('click', () => envoyer(cmd)));
+  [['bLancer', 'analyser'], ['bNouvelle', 'analyser'], ['bArreter', 'arreter'], ['bReparer', 'reparer'], ['bIsoler', 'isoler'], ['bRanger', 'ranger'], ['bBlocage', 'blocage'], ['bSortir', 'sortir'], ['bRemettre', 'remettre'], ['bAnnuler', 'annuler'], ['bRapport', 'rapport'], ['bActuQ', 'quarantaine'], ['bDossierRapports', 'dossierRapports']].forEach(([id, cmd]) => $(id).addEventListener('click', () => envoyer(cmd)));
   $('bVersControle').addEventListener('click', () => choisirVue('controle'));
   $('recherche').addEventListener('input', (e) => { etat.recherche = e.target.value; dessinerListe(); });
   if (hote) { hote.addEventListener('message', (e) => recevoir(e.data)); envoyer('pret'); }

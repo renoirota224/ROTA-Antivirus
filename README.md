@@ -5,7 +5,7 @@ Logiciel Windows de RotaGaming pour contrôler un disque avant sa livraison.
 - Analyse un disque sans lancer ses programmes.
 - Répare les programmes touchés par Expiro quand la réparation est prouvée.
 - Remplace un fichier seulement par une copie officielle signée.
-- Isole ce qui ne peut pas être réparé dans `_QUARANTAINE_ROTA`, sans rien supprimer.
+- Isole séparément ce qui ne peut pas être réparé dans `_QUARANTAINE_ROTA`, sans rien supprimer.
 - Range `RECYCLER.BIN` et bloque le retour de PlugX.
 - Sort la quarantaine du disque vers le PC après vérification, et peut la remettre.
 - Filtre les fichiers, montre leur emplacement et garde l'historique des contrôles.
