@@ -105,12 +105,12 @@ namespace RotaAntivirus
                 case "pret": EnvoyerDisques(); break;
                 case "analyser": if (!occupe && DisqueConnu(disque)) Analyse(disque); break;
                 case "arreter": if (arret != null) arret.Cancel(); break;
-                case "reparer": if (!occupe && PeutEcrire(disque)) Reparer(disque); break;
+                case "reparer": if (!occupe && DisqueConnu(disque) && plan != null && string.Equals(disqueAnalyse, disque, StringComparison.OrdinalIgnoreCase)) Reparer(disque); break;
                 case "ranger": if (!occupe && PeutEcrire(disque)) Ranger(disque); break;
                 case "blocage": if (!occupe && PeutEcrire(disque)) Blocage(disque); break;
                 case "sortir": if (!occupe && PeutEcrire(disque)) Sortir(disque); break;
                 case "remettre": if (!occupe && Externe(disque)) Remettre(disque); break;
-                case "annuler": if (!occupe && Externe(disque)) AnnulerReparation(disque); break;
+                case "annuler": if (!occupe && DisqueConnu(disque)) AnnulerReparation(disque); break;
                 case "rapport": OuvrirFichierRapport(rapport); break;
                 case "quarantaine": if (DisqueConnu(disque)) EnvoyerQuarantaine(disque); break;
                 case "historique": EnvoyerHistorique(); break;
@@ -181,7 +181,7 @@ namespace RotaAntivirus
                 Envoyer(new
                 {
                     type = "resultat", disque = disque, niveau = v.Niveau, titre = v.Titre, bloquants = v.Bloquants, reserves = v.Reserves, aTraiter = v.ATraiter,
-                    total = p.Total, examines = p.Examines, systeme = systeme, recycler = etat.RecyclerDossier, blocage = etat.Blocage, quarantaine = etat.Quarantaine, archive = archive,
+                    total = p.Total, examines = p.Examines, systeme = systeme, recycler = etat.RecyclerDossier, blocage = etat.Blocage, quarantaine = etat.Quarantaine, archive = archive, annulable = Moteur.PeutAnnuler(disque),
                     message = messageAvant, tronque = p.Elements.Count > MaxLignes, nbElements = p.Elements.Count,
                     elements = lignes.Select((x, i) => new { index = i.ToString(), type = x.Type, libelle = Moteur.Libelle(x.Type), relatif = x.Relatif, detail = x.Detail }).ToList()
                 });
@@ -208,7 +208,8 @@ namespace RotaAntivirus
         void Reparer(string disque)
         {
             if (verdict == null || verdict.ATraiter == 0) return;
-            if (!Confirmer(verdict.ATraiter + " fichier(s) vont être réparés, remplacés ou isolés sur " + disque + ".\n\nRien n'est supprimé : les originaux vont dans _QUARANTAINE_ROTA.\nNe débranche pas le disque.\n\nContinuer ?")) return;
+            var zone = Moteur.EstDisqueSysteme(disque) ? "\n\nSur le disque de Windows, seuls tes dossiers personnels sont touchés. Windows et Program Files restent intacts." : "\nNe débranche pas le disque.";
+            if (!Confirmer(verdict.ATraiter + " fichier(s) vont être réparés, remplacés ou isolés sur " + disque + ".\n\nRien n'est supprimé : les originaux vont dans _QUARANTAINE_ROTA." + zone + "\n\nContinuer ?")) return;
             var p = plan; Action2("Réparation en cours", "Réparation", disque, () => Moteur.Appliquer(p, disque, Suivi));
         }
 

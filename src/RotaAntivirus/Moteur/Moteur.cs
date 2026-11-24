@@ -34,6 +34,13 @@ public static class Moteur
     static readonly string[] ExtensionsPe = { ".exe", ".dll", ".scr", ".ocx", ".cpl", ".sys" };
     static readonly string[] NomsPlugX = { "cefhelper.exe", "wsc.dll", "avastauth.dat" };
     static readonly string[] TypesAction = { "REPARER", "REMPLACER", "GRENAM", "ISOLER" };
+    static readonly string[] FichiersMemoire = { "pagefile.sys", "swapfile.sys", "hiberfil.sys" };
+
+    // Sur le disque de Windows, seuls les dossiers personnels peuvent etre repares pendant que Windows tourne.
+    public static bool ReparableSurSysteme(string relatif)
+    {
+        return relatif.StartsWith("Users\\", StringComparison.OrdinalIgnoreCase) && relatif.IndexOf("\\AppData\\Local\\Microsoft\\WindowsApps\\", StringComparison.OrdinalIgnoreCase) < 0;
+    }
 
     class Fichier { public string Chemin, Nom, Ext, Dossier; public long Taille; public int Attr; }
     class InfoPe { public string Derniere = ""; public uint Droits, Taille, Cert; public bool Upx0, Upx1; }
@@ -222,6 +229,9 @@ public static class Moteur
                 else
                 {
                     plan.Total++; var ext = i.Extension.ToLowerInvariant();
+                    // Les raccourcis d'applications Windows et les fichiers de memoire ne sont pas de vrais programmes a lire.
+                    if ((i.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                    if (string.Equals(Path.GetDirectoryName(p).TrimEnd('\\'), racine.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) && FichiersMemoire.Contains(i.Name.ToLowerInvariant())) continue;
                     if (ExtensionsPe.Contains(ext) || ext == ".lnk" || ext == ".dat")
                         l.Add(new Fichier { Chemin = p, Nom = i.Name, Ext = ext, Taille = ((FileInfo)i).Length, Attr = (int)i.Attributes & 0x3FFFF, Dossier = Path.GetDirectoryName(p) });
                 }
@@ -334,7 +344,8 @@ public static class Moteur
     {
         var v = new VerdictDisque();
         if (p.PcInfecte) v.Bloquants.Add("Ce PC porte la marque du virus : il pourrait réinfecter le disque.");
-        if (p.Illisibles > 0) v.Bloquants.Add(p.Illisibles + " dossier(s) illisible(s) : contrôle incomplet.");
+        if (p.Illisibles > 0 && !systeme) v.Bloquants.Add(p.Illisibles + " dossier(s) illisible(s) : contrôle incomplet.");
+        if (p.Illisibles > 0 && systeme) v.Reserves.Add(p.Illisibles + " dossier(s) protégé(s) par Windows n'ont pas été lus.");
         foreach (var k in new[] { "REPARER", "REMPLACER", "GRENAM", "ISOLER", "RETELECHARGER", "A_VERIFIER" })
         { int n = p.Elements.Count(x => x.Type == k); if (n > 0) v.Bloquants.Add(n + " fichier(s) : " + Libelle(k)); }
         if (e.RecyclerDossier) v.Bloquants.Add("Dossier RECYCLER.BIN présent (PlugX) : à ranger.");
@@ -347,7 +358,9 @@ public static class Moteur
         if (inerte > 0) v.Reserves.Add(inerte + " fichier(s) avec une marque inerte : teste ces jeux.");
         v.Reserves.Add("Ce contrôle reconnaît Expiro, Grenam, PlugX et UPX1, pas tous les virus.");
         v.Reserves.Add("Lance quelques jeux avant de livrer.");
-        v.ATraiter = p.Elements.Count(x => TypesAction.Contains(x.Type));
+        v.ATraiter = p.Elements.Count(x => TypesAction.Contains(x.Type) && (!systeme || ReparableSurSysteme(x.Relatif)));
+        int horsZone = p.Elements.Count(x => TypesAction.Contains(x.Type)) - v.ATraiter;
+        if (horsZone > 0) v.Reserves.Insert(0, horsZone + " fichier(s) dans Windows ou Program Files ne peuvent pas être réparés pendant que Windows tourne.");
         v.Niveau = v.Bloquants.Count == 0 ? "PRET" : "PAS_PRET";
         v.Titre = systeme ? (v.Niveau == "PRET" ? "Aucun problème connu sur ce disque Windows" : "Problèmes trouvés sur ce disque Windows") : (v.Niveau == "PRET" ? "Prêt pour la livraison" : "Pas prêt pour la livraison");
         return v;
@@ -434,8 +447,10 @@ public static class Moteur
 
     public static ResultatAction Appliquer(PlanDisque plan, string racineBrute, Action<Avancement> suivi, bool essai = false)
     {
-        string racine = Normaliser(racineBrute); Refuser(racine, essai);
-        var liste = plan.Elements.Where(e => TypesAction.Contains(e.Type)).ToList(); var r = new ResultatAction();
+        string racine = Normaliser(racineBrute); bool systeme = !essai && EstDisqueSysteme(racine);
+        if (!essai && PcInfecte() > 0) throw new InvalidOperationException("Ce PC porte la marque du virus : il réinfecterait le disque.");
+        var liste = plan.Elements.Where(e => TypesAction.Contains(e.Type) && (!systeme || ReparableSurSysteme(e.Relatif))).ToList(); var r = new ResultatAction();
+        if (systeme && liste.Count == 0) { r.Messages.Add("Aucun fichier réparable dans tes dossiers personnels."); return r; }
         var dir = Path.Combine(racine, DossierQuarantaine, "antivirus-" + DateTime.Now.ToString("yyyyMMdd-HHmmss")); Directory.CreateDirectory(dir);
         r.Session = dir; string man = Path.Combine(dir, "manifeste.tsv"); int i = 0;
         foreach (var e in liste)
@@ -444,8 +459,15 @@ public static class Moteur
             try { TraiterElement(e, dir, i.ToString("D6"), man); r.Ok++; }
             catch (Exception ex) { r.Echecs++; r.Messages.Add("Échec : " + e.Relatif + " : " + ex.Message); }
         }
-        try { PoserBlocage(racine, r); } catch (Exception ex) { r.Echecs++; r.Messages.Add("Blocage non posé : " + ex.Message); }
+        if (!systeme) { try { PoserBlocage(racine, r); } catch (Exception ex) { r.Echecs++; r.Messages.Add("Blocage non posé : " + ex.Message); } }
         return r;
+    }
+
+    public static bool PeutAnnuler(string racineBrute)
+    {
+        var bas = Path.Combine(Normaliser(racineBrute), DossierQuarantaine); if (!Directory.Exists(bas)) return false;
+        return Directory.GetDirectories(bas, "antivirus-*").Any(x => File.Exists(Path.Combine(x, "manifeste.tsv")) && Directory.GetFiles(x, "*.origine").Length > 0)
+            || Directory.GetDirectories(bas, "recycler-*").Any(x => Directory.Exists(Path.Combine(x, "RECYCLER.BIN")));
     }
 
     static string DateSession(string d) { var n = Path.GetFileName(d); return n.Substring(n.IndexOf('-') + 1); }
@@ -474,7 +496,7 @@ public static class Moteur
 
     public static ResultatAction Annuler(string racineBrute, bool essai = false)
     {
-        string racine = Normaliser(racineBrute); if (!essai && EstDisqueSysteme(racine)) throw new InvalidOperationException("Cette action ne travaille que sur un disque externe.");
+        string racine = Normaliser(racineBrute);
         var r = new ResultatAction(); var bas = Path.Combine(racine, DossierQuarantaine);
         if (!Directory.Exists(bas)) { r.Messages.Add("Aucune réparation sur ce disque."); return r; }
         var dir = Directory.GetDirectories(bas, "antivirus-*").OrderByDescending(x => x, StringComparer.Ordinal).FirstOrDefault(x => File.Exists(Path.Combine(x, "manifeste.tsv")) && Directory.GetFiles(x, "*.origine").Length > 0);

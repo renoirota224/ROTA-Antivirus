@@ -35,10 +35,18 @@ try {
     [void][Moteur]::SortirQuarantaine($t, "$t-q", $true)
     [IO.File]::SetAttributes("$t\RECYCLER.BIN", 'Normal'); Remove-Item -LiteralPath "$t\RECYCLER.BIN" -Force; [void][Moteur]::PoserBlocageDisque($t, $true)
     Test-Point 'Blocage seul pose' ([Moteur]::Etat($t).Blocage)
-    $refus = $false; try { [void][Moteur]::Appliquer((Get-PlanEssai), $env:SystemDrive + '\', $null, $false) } catch { $refus = $true }
-    Test-Point 'Disque Windows refuse' $refus
+    $refus = 0; try { [void][Moteur]::RangerRecycler($env:SystemDrive + '\', 0, $false) } catch { $refus++ }; try { [void][Moteur]::PoserBlocageDisque($env:SystemDrive + '\', $false) } catch { $refus++ }; try { [void][Moteur]::SortirQuarantaine($env:SystemDrive + '\', "$t-q", $false) } catch { $refus++ }
+    Test-Point 'Disque Windows : ranger, bloquer et sortir refuses' ($refus -eq 3)
     Test-Point 'Signature valide reconnue' ([Moteur]::SignatureValide("$env:WINDIR\explorer.exe") -or -not (Get-AuthenticodeSignature "$env:WINDIR\explorer.exe").SignerCertificate -or (Get-AuthenticodeSignature "$env:WINDIR\explorer.exe").SignatureType -eq 'Catalog')
     Test-Point 'Fichier non signe refuse' (-not [Moteur]::SignatureValide("$t\Jeu\notes.txt"))
+
+    Test-Point 'C: dossier personnel reparable' ([Moteur]::ReparableSurSysteme('Users\Admin\Downloads\jeu.exe'))
+    Test-Point 'C: Windows protege' (-not [Moteur]::ReparableSurSysteme('Windows\System32\cmd.exe'))
+    Test-Point 'C: Program Files protege' (-not [Moteur]::ReparableSurSysteme('Program Files\App\app.exe'))
+    Test-Point 'C: alias Windows protege' (-not [Moteur]::ReparableSurSysteme('Users\Admin\AppData\Local\Microsoft\WindowsApps\winget.exe'))
+    $pz = New-Object PlanDisque; foreach ($x in 'Users\A\jeu.exe', 'Windows\x.exe') { $el = New-Object ElementPlan; $el.Type = 'REPARER'; $el.Relatif = $x; $pz.Elements.Add($el) }
+    $vz = [Moteur]::Verdict($pz, (New-Object EtatDisque), $true)
+    Test-Point 'C: seul le dossier personnel compte' ($vz.ATraiter -eq 1 -and $vz.Reserves[0] -like '1 fichier*Windows*')
 
     # Parcours complet : reparer, ranger, sortir, remettre, puis tout annuler.
     $b = "$t-b"; [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\1"); [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\DOCS")

@@ -122,12 +122,12 @@
     (pret ? m.reserves : m.bloquants).forEach((t) => { const li = document.createElement('li'); li.textContent = t; pts.appendChild(li); });
     const aListe = m.elements.length > 0; $('outilsListe').hidden = !aListe; $('liste').hidden = !aListe; dessinerListe();
     const ext = !m.systeme;
-    $('bReparer').hidden = !(ext && m.aTraiter > 0);
+    $('bReparer').hidden = !(m.aTraiter > 0);
     $('bRanger').hidden = !(ext && m.recycler);
     $('bBlocage').hidden = !(ext && !m.recycler && !m.blocage);
     $('bSortir').hidden = !(ext && m.quarantaine && m.aTraiter === 0 && !m.recycler);
     $('bRemettre').hidden = !(ext && m.archive && !m.quarantaine);
-    $('bAnnuler').hidden = !(ext && m.quarantaine);
+    $('bAnnuler').hidden = !m.annulable;
     $('bRapport').hidden = false; $('bNouvelle').hidden = false;
     $('infos').textContent = nombre(m.total) + ' fichiers, ' + nombre(m.examines) + ' examinés' + (m.tronque ? ', ' + m.nbElements + ' à voir dans le rapport' : '');
     arreterChrono(); Object.keys(etat).forEach((k) => { if (k.startsWith('vu:')) delete etat[k]; });
