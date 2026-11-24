@@ -121,6 +121,12 @@ namespace RotaAntivirus
                 case "dossierRapports": OuvrirDossierRapports(); break;
                 case "emplacement": OuvrirEmplacement(valeur); break;
                 case "copier": CopierChemin(valeur); break;
+                case "defender": if (!occupe && PlanDe(disque)) Approfondie(disque); break;
+                case "comparer": if (!occupe && PlanDe(disque)) Comparer(disque); break;
+                case "bibliotheque": EnvoyerBibliotheque(); break;
+                case "ajouterReference": if (!occupe) AjouterReference(); break;
+                case "supprimerReference": if (!occupe) SupprimerReference(valeur); break;
+                case "certificat": if (!occupe && PlanDe(disque)) Certificat(disque, valeur); break;
             }
         }
 
@@ -173,22 +179,89 @@ namespace RotaAntivirus
             arret = new CancellationTokenSource(); var jeton = arret.Token;
             plan = null; verdict = null; disqueAnalyse = ""; vue = new List<ElementPlan>();
             Envoyer(new { type = "debut", disque = disque, message = messageAvant });
+            Tache(false, () => { var p = Moteur.Analyser(disque, Suivi, jeton); EnvoyerResultat(disque, p, messageAvant); });
+        }
+
+        void EnvoyerResultat(string disque, PlanDisque p, string message)
+        {
+            bool systeme = Moteur.EstDisqueSysteme(disque); var etat = Moteur.Etat(disque); var v = Moteur.Verdict(p, etat, systeme);
+            if (p.DefenderFait) v.Reserves.Insert(0, "Windows Defender : " + p.MenacesDefender + " menace(s) signalée(s) sur tout le disque.");
+            if (p.BibliothequeFaite) v.Reserves.Insert(0, "Bibliothèque : " + p.DifferencesBibliotheque + " différence(s) avec tes copies maîtres.");
+            rapport = Moteur.EcrireRapport(DossierRapports, disque, v, p);
+            var lignes = p.Elements.OrderBy(x => x.Type == "RESTE" ? 1 : 0).Take(MaxLignes).ToList();
+            bool archive = !systeme && Moteur.ArchiveExiste(disque);
+            plan = p; verdict = v; disqueAnalyse = disque; vue = lignes; Fin();
+            Envoyer(new
+            {
+                type = "resultat", disque = disque, niveau = v.Niveau, titre = v.Titre, bloquants = v.Bloquants, reserves = v.Reserves, aTraiter = v.ATraiter, aReparer = v.AReparer, aIsoler = v.AIsoler,
+                total = p.Total, examines = p.Examines, systeme = systeme, recycler = etat.RecyclerDossier, blocage = etat.Blocage, quarantaine = etat.Quarantaine, caches = etat.DossiersCaches, archive = archive, annulable = Moteur.PeutAnnuler(disque),
+                defenderFait = p.DefenderFait, bibliothequeFaite = p.BibliothequeFaite, references = Moteur.ListerReferences().Count,
+                message = message, tronque = p.Elements.Count > MaxLignes, nbElements = p.Elements.Count,
+                elements = lignes.Select((x, i) => new { index = i.ToString(), type = x.Type, libelle = Moteur.Libelle(x.Type), relatif = x.Relatif, detail = x.Detail }).ToList()
+            });
+        }
+
+        bool PlanDe(string disque) { return DisqueConnu(disque) && plan != null && string.Equals(disqueAnalyse, disque, StringComparison.OrdinalIgnoreCase); }
+
+        void Approfondie(string disque)
+        {
+            arret = new CancellationTokenSource(); var jeton = arret.Token; var p = plan;
+            Envoyer(new { type = "analyse2", titre = "Analyse approfondie Windows Defender" });
             Tache(false, () =>
             {
-                var p = Moteur.Analyser(disque, Suivi, jeton);
-                bool systeme = Moteur.EstDisqueSysteme(disque); var etat = Moteur.Etat(disque); var v = Moteur.Verdict(p, etat, systeme);
-                rapport = Moteur.EcrireRapport(DossierRapports, disque, v, p);
-                var lignes = p.Elements.OrderBy(x => x.Type == "RESTE" ? 1 : 0).Take(MaxLignes).ToList();
-                bool archive = !systeme && Moteur.ArchiveExiste(disque);
-                plan = p; verdict = v; disqueAnalyse = disque; vue = lignes; Fin();
-                Envoyer(new
-                {
-                    type = "resultat", disque = disque, niveau = v.Niveau, titre = v.Titre, bloquants = v.Bloquants, reserves = v.Reserves, aTraiter = v.ATraiter, aReparer = v.AReparer, aIsoler = v.AIsoler,
-                    total = p.Total, examines = p.Examines, systeme = systeme, recycler = etat.RecyclerDossier, blocage = etat.Blocage, quarantaine = etat.Quarantaine, caches = etat.DossiersCaches, archive = archive, annulable = Moteur.PeutAnnuler(disque),
-                    message = messageAvant, tronque = p.Elements.Count > MaxLignes, nbElements = p.Elements.Count,
-                    elements = lignes.Select((x, i) => new { index = i.ToString(), type = x.Type, libelle = Moteur.Libelle(x.Type), relatif = x.Relatif, detail = x.Detail }).ToList()
-                });
+                var det = Moteur.AnalyseDefender(disque, Suivi, jeton); int n = Moteur.FusionnerDefender(p, disque, det);
+                EnvoyerResultat(disque, p, "Windows Defender : " + det.Count + " menace(s) trouvée(s), " + n + " nouveau(x) fichier(s) à traiter.");
             });
+        }
+
+        void Comparer(string disque)
+        {
+            arret = new CancellationTokenSource(); var jeton = arret.Token; var p = plan;
+            Envoyer(new { type = "analyse2", titre = "Comparaison avec ta bibliothèque" });
+            Tache(false, () => { int n = Moteur.ComparerBibliotheque(disque, p, Suivi, jeton); EnvoyerResultat(disque, p, "Bibliothèque : " + n + " différence(s) avec tes copies maîtres."); });
+        }
+
+        void EnvoyerBibliotheque()
+        {
+            try { Envoyer(new { type = "bibliotheque", references = Moteur.ListerReferences().Select(r => new { nom = r.Nom, source = r.Source, date = r.Date, fichiers = r.Fichiers }).ToList() }); }
+            catch (Exception ex) { Envoyer(new { type = "erreur", message = ex.Message }); }
+        }
+
+        void AjouterReference()
+        {
+            string dossier;
+            using (var f = new FolderBrowserDialog { Description = "Choisis le dossier PROPRE d'un jeu (ta copie maître). ROTA Antivirus va enregistrer l'empreinte de ses programmes.", ShowNewFolderButton = false })
+            { if (f.ShowDialog(this) != DialogResult.OK) return; dossier = f.SelectedPath; }
+            arret = new CancellationTokenSource(); var jeton = arret.Token;
+            Envoyer(new { type = "analyse2", titre = "Création de la référence" });
+            Tache(false, () =>
+            {
+                int n = Moteur.CreerReference(dossier, Suivi, jeton); Fin();
+                Envoyer(new { type = "retour", vue = "bibliotheque", message = "Référence créée : " + n + " programme(s) enregistré(s)." }); EnvoyerBibliotheque();
+            });
+        }
+
+        void SupprimerReference(string nom)
+        {
+            if (string.IsNullOrEmpty(nom) || !Moteur.ListerReferences().Any(r => r.Nom == nom)) return;
+            if (!Confirmer("Retirer « " + nom + " » de ta bibliothèque ?\n\nSeule la liste d'empreintes est retirée. Ta copie maître n'est pas touchée.")) return;
+            try { Moteur.SupprimerReference(nom); } catch (Exception ex) { Envoyer(new { type = "erreur", message = ex.Message }); return; }
+            EnvoyerBibliotheque();
+        }
+
+        void Certificat(string disque, string client)
+        {
+            if (verdict == null || verdict.Niveau != "PRET" || Moteur.EstDisqueSysteme(disque)) return;
+            if (client != null && client.Length > 80) client = client.Substring(0, 80);
+            try
+            {
+                string logo = ""; var lp = Path.Combine(AppContext.BaseDirectory, "wwwroot", "logo.png"); if (File.Exists(lp)) logo = Convert.ToBase64String(File.ReadAllBytes(lp));
+                var version = typeof(MainForm).Assembly.GetName().Version.ToString(3);
+                var c = Moteur.EcrireCertificat(Path.Combine(donnees, "Certificats"), disque, client, verdict, plan, logo, version);
+                Process.Start(new ProcessStartInfo(c) { UseShellExecute = true });
+                Envoyer(new { type = "info", message = "Certificat créé : imprime-le ou enregistre-le en PDF." });
+            }
+            catch (Exception ex) { Envoyer(new { type = "erreur", message = ex.Message }); }
         }
 
         bool Confirmer(string texte)
@@ -248,7 +321,8 @@ namespace RotaAntivirus
                 : "1. Sortir la quarantaine sur le PC si le disque est plein\n2. Réparer les programmes\n3. Isoler ceux qui sont irréparables\n4. Remettre les fichiers cachés par PlugX\n5. Ranger RECYCLER.BIN\n6. Poser le blocage PlugX";
             if (!Confirmer("Nettoyer complètement " + disque + " ?\n\n" + etapes + "\n\nRien n'est supprimé : tout reste récupérable. Si une étape échoue, le nettoyage s'arrête et explique pourquoi." + (sys ? "" : "\nNe débranche pas le disque.") + "\n\nContinuer ?")) return;
             Envoyer(new { type = "action", titre = "Nettoyage complet" });
-            Tache(true, () => { var r = Moteur.ToutNettoyer(disque, Suivi); Fin(); Relancer(disque, string.Join(" ", r.Messages.Take(9))); });
+            var extras = plan == null ? new List<ElementPlan>() : plan.Elements.Where(e => e.Type == "RESTAURER" || e.Detail.Contains("Windows Defender") || e.Detail.Contains("copie maître")).ToList();
+            Tache(true, () => { var r = Moteur.ToutNettoyer(disque, Suivi, false, null, extras); Fin(); Relancer(disque, string.Join(" ", r.Messages.Take(9))); });
         }
 
         void Caches(string disque)

@@ -4,9 +4,9 @@
   const hote = window.chrome && window.chrome.webview;
   const etat = { disques: [], disque: '', occupe: false, resultat: null, vue: 'controle', ecranControle: 'ecranAccueil', filtre: 'tous', recherche: '' };
   const envoyer = (cmd, valeur) => { if (hote) hote.postMessage({ cmd: cmd, disque: etat.disque, valeur: valeur === undefined ? '' : String(valeur) }); };
-  const ecrans = ['ecranAccueil', 'ecranAnalyse', 'ecranResultat', 'ecranQuarantaine', 'ecranHistorique', 'ecranAide'];
+  const ecrans = ['ecranAccueil', 'ecranAnalyse', 'ecranResultat', 'ecranQuarantaine', 'ecranBibliotheque', 'ecranHistorique', 'ecranAide'];
   const FILTRES = [['tous', 'Tous'], ['traiter', 'À traiter'], ['verifier', 'À vérifier'], ['inerte', 'Inertes']];
-  const TRAITER = ['REPARER', 'REMPLACER', 'GRENAM', 'ISOLER', 'RETELECHARGER'];
+  const TRAITER = ['REPARER', 'REMPLACER', 'RESTAURER', 'GRENAM', 'ISOLER', 'RETELECHARGER'];
   let minuteur = null, debut = 0, chrono = null, refFait = 0, refTemps = 0, dernierCourant = '';
   const mission = window.Mission;
 
@@ -39,6 +39,7 @@
     if (v === 'controle') montrer(etat.ecranControle);
     if (v === 'quarantaine') { $('nomDisqueQ').textContent = nomDisque(); montrer('ecranQuarantaine'); envoyer('quarantaine'); }
     if (v === 'historique') { montrer('ecranHistorique'); envoyer('historique'); }
+    if (v === 'bibliotheque') { montrer('ecranBibliotheque'); envoyer('bibliotheque'); }
     if (v === 'aide') montrer('ecranAide');
   }
 
@@ -132,6 +133,8 @@
     $('bRemettre').hidden = !(ext && m.archive && !m.quarantaine);
     $('bAnnuler').hidden = !m.annulable;
     $('bRapport').hidden = false; $('bNouvelle').hidden = false;
+    $('bDefender').hidden = !!m.defenderFait; $('bComparer').hidden = !(m.references > 0) || !!m.bibliothequeFaite;
+    $('zoneCertificat').hidden = !(pret && ext);
     $('infos').textContent = nombre(m.total) + ' fichiers, ' + nombre(m.examines) + ' examinés' + (m.tronque ? ', ' + m.nbElements + ' à voir dans le rapport' : '');
     arreterChrono(); Object.keys(etat).forEach((k) => { if (k.startsWith('vu:')) delete etat[k]; });
     const vraies = m.elements.filter((e) => e.type !== 'RESTE'); mission.vider(); vraies.forEach((e) => mission.cible(e.type, e.relatif)); mission.progres(1); mission.mode(pret ? 'ok' : 'alerte');
@@ -143,7 +146,7 @@
     occuper(false); etat.resultat = null; ambiance('alerte'); $('noyau').className = 'noyau'; coeur('ERREUR', '!', 'Opération arrêtée');
     $('titreResultat').textContent = 'Opération impossible'; $('message').hidden = false; $('message').textContent = t;
     $('points').replaceChildren(); $('liste').replaceChildren(); $('liste').hidden = true; $('outilsListe').hidden = true;
-    ['bTout', 'bReparer', 'bIsoler', 'bCaches', 'bRanger', 'bBlocage', 'bSortir', 'bRemettre', 'bAnnuler', 'bRapport'].forEach((b) => { $(b).hidden = true; }); $('bNouvelle').hidden = false;
+    ['bTout', 'bReparer', 'bIsoler', 'bCaches', 'bRanger', 'bBlocage', 'bSortir', 'bRemettre', 'bAnnuler', 'bRapport', 'bDefender', 'bComparer', 'zoneCertificat'].forEach((b) => { $(b).hidden = true; }); $('bNouvelle').hidden = false;
     arreterChrono(); mission.vider(); mission.mode('alerte'); telemetrie('ERREUR', 0, 0);
     controle('ecranResultat');
   }
@@ -175,6 +178,17 @@
     });
   }
 
+  function bibliotheque(m) {
+    const z = $('listeBibliotheque'); z.replaceChildren();
+    if (!m.references.length) { const v = document.createElement('div'); v.className = 'vide'; v.textContent = 'Aucune copie maître pour l’instant. Ajoute le dossier propre de ton premier jeu.'; z.appendChild(v); return; }
+    m.references.forEach((r) => {
+      const dr = document.createElement('div'); dr.className = 'droite';
+      const e = document.createElement('span'); e.className = 'etat'; e.textContent = r.fichiers + ' programme(s)';
+      dr.append(e, bouton('Retirer', 'mini', () => envoyer('supprimerReference', r.nom), 'Retirer ' + r.nom + ' de la bibliothèque'));
+      z.appendChild(ligneSimple(r.nom, (r.date ? r.date + ' • ' : '') + r.source, dr, 'ok-ligne'));
+    });
+  }
+
   function recevoir(m) {
     switch (m.type) {
       case 'disques':
@@ -190,12 +204,17 @@
       case 'quarantaine': quarantaine(m); break;
       case 'historique': historique(m); break;
       case 'info': notifier(m.message); break;
+      case 'analyse2': $('bArreter').hidden = false; debutTravail(m.titre); break;
+      case 'retour': occuper(false); if (etat.resultat) resultat(etat.resultat); else accueil(); choisirVue(m.vue || 'controle'); if (m.message) notifier(m.message); break;
+      case 'bibliotheque': bibliotheque(m); break;
     }
   }
 
   document.querySelectorAll('.onglet').forEach((b) => b.addEventListener('click', () => choisirVue(b.dataset.vue)));
   [['bTout', 'tout'], ['bLancer', 'analyser'], ['bNouvelle', 'analyser'], ['bArreter', 'arreter'], ['bReparer', 'reparer'], ['bIsoler', 'isoler'], ['bCaches', 'caches'], ['bRanger', 'ranger'], ['bBlocage', 'blocage'], ['bSortir', 'sortir'], ['bRemettre', 'remettre'], ['bAnnuler', 'annuler'], ['bRapport', 'rapport'], ['bActuQ', 'quarantaine'], ['bDossierRapports', 'dossierRapports']].forEach(([id, cmd]) => $(id).addEventListener('click', () => envoyer(cmd)));
   $('bVersControle').addEventListener('click', () => choisirVue('controle'));
+  [['bDefender', 'defender'], ['bComparer', 'comparer'], ['bAjouterRef', 'ajouterReference']].forEach(([id, cmd]) => $(id).addEventListener('click', () => envoyer(cmd)));
+  $('bCertificat').addEventListener('click', () => envoyer('certificat', $('clientNom').value));
   $('recherche').addEventListener('input', (e) => { etat.recherche = e.target.value; dessinerListe(); });
   if (hote) { hote.addEventListener('message', (e) => recevoir(e.data)); envoyer('pret'); }
   window.addEventListener('focus', () => { if (!etat.occupe) envoyer('pret'); });

@@ -11,13 +11,16 @@ using System.Threading;
 
 public class ElementPlan
 {
-    public string Type = "", Chemin = "", Relatif = "", Detail = "", CheminG = "", RelatifG = "", Source = "";
+    public string Type = "", Chemin = "", Relatif = "", Detail = "", CheminG = "", RelatifG = "", Source = "", Empreinte = "";
     public int Attr, AttrG;
 }
 
+public class InfoReference { public string Nom = "", Source = "", Date = ""; public int Fichiers; }
+public class DetectionDefender { public string Menace = "", Fichier = ""; }
+
 public class PlanDisque
 {
-    public long Total; public int Examines, Illisibles; public bool PcInfecte;
+    public long Total; public int Examines, Illisibles, MenacesDefender, DifferencesBibliotheque; public bool PcInfecte, DefenderFait, BibliothequeFaite;
     public List<ElementPlan> Elements = new List<ElementPlan>();
 }
 
@@ -33,7 +36,9 @@ public static class Moteur
     const long TailleMax = 1L << 30;
     static readonly string[] ExtensionsPe = { ".exe", ".dll", ".scr", ".ocx", ".cpl", ".sys" };
     static readonly string[] NomsPlugX = { "cefhelper.exe", "wsc.dll", "avastauth.dat" };
-    static readonly string[] TypesAction = { "REPARER", "REMPLACER", "GRENAM", "ISOLER" };
+    static readonly string[] TypesAction = { "REPARER", "REMPLACER", "RESTAURER", "GRENAM", "ISOLER" };
+    static readonly string[] ExtensionsSurveillees = { ".exe", ".dll", ".scr", ".ocx", ".cpl", ".sys", ".com", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".msi", ".lnk" };
+    static readonly string[] MenacesLegeres = { "HackTool", "PUA", "PUADlEnablement", "PUAMiner", "Program", "Misleading", "Adware", "SoftwareBundler", "BrowserModifier", "App", "Tool" };
     static readonly string[] FichiersMemoire = { "pagefile.sys", "swapfile.sys", "hiberfil.sys" };
     const long PlaceMinimum = 300L * 1024 * 1024;
 
@@ -98,6 +103,7 @@ public static class Moteur
         {
             case "REPARER": return "À réparer";
             case "REMPLACER": return "À remplacer (copie officielle)";
+            case "RESTAURER": return "À restaurer (copie maître)";
             case "GRENAM": return "Faux programme à remplacer";
             case "ISOLER": return "À isoler";
             case "RETELECHARGER": return "À retélécharger";
@@ -401,7 +407,7 @@ public static class Moteur
         if (p.PcInfecte) v.Bloquants.Add("Ce PC porte la marque du virus : il pourrait réinfecter le disque.");
         if (p.Illisibles > 0 && !systeme) v.Bloquants.Add(p.Illisibles + " dossier(s) illisible(s) : contrôle incomplet.");
         if (p.Illisibles > 0 && systeme) v.Reserves.Add(p.Illisibles + " dossier(s) protégé(s) par Windows n'ont pas été lus.");
-        foreach (var k in new[] { "REPARER", "REMPLACER", "GRENAM", "ISOLER", "RETELECHARGER", "A_VERIFIER" })
+        foreach (var k in new[] { "REPARER", "REMPLACER", "RESTAURER", "GRENAM", "ISOLER", "RETELECHARGER", "A_VERIFIER" })
         { int n = p.Elements.Count(x => x.Type == k); if (n > 0) v.Bloquants.Add(n + " fichier(s) : " + Libelle(k)); }
         if (e.RecyclerDossier) v.Bloquants.Add("Dossier RECYCLER.BIN présent (PlugX) : à ranger.");
         if (e.DossiersCaches > 0) v.Bloquants.Add(e.DossiersCaches + " dossier(s) caché(s) par PlugX : tes fichiers sont dedans, clique sur Remettre les fichiers cachés.");
@@ -467,6 +473,11 @@ public static class Moteur
             {
                 brut = File.ReadAllBytes(Long(e.Chemin)); o = File.ReadAllBytes(e.Source);
                 if (!Reparateur.MemeProgramme(brut, o) || !SignatureValide(e.Source)) throw new IOException("copie officielle non prouvée");
+            }
+            else if (e.Type == "RESTAURER")
+            {
+                brut = File.ReadAllBytes(Long(e.Chemin)); o = File.ReadAllBytes(Long(e.Source));
+                if (e.Empreinte == "" || Empreinte(o) != e.Empreinte) throw new IOException("la copie maître a changé depuis sa référence");
             }
             else
             {
@@ -536,8 +547,223 @@ public static class Moteur
         return r;
     }
 
+    // ---------- Windows Defender (deuxieme moteur, lecture seule) ----------
+    public static List<DetectionDefender> AnalyseDefender(string racineBrute, Action<Avancement> suivi, CancellationToken stop)
+    {
+        var mp = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Windows Defender", "MpCmdRun.exe");
+        if (!File.Exists(mp)) throw new InvalidOperationException("Windows Defender n'est pas disponible sur ce PC.");
+        var cible = Normaliser(racineBrute).TrimEnd('\\');
+        var arg = cible.Length == 2 ? cible + "\\" : "\"" + cible + "\"";
+        var psi = new System.Diagnostics.ProcessStartInfo(mp, "-Scan -ScanType 3 -File " + arg + " -DisableRemediation") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        var lignes = new List<string>(); var verrou = new object(); var debut = DateTime.UtcNow;
+        using (var p = new System.Diagnostics.Process { StartInfo = psi })
+        {
+            p.OutputDataReceived += (s, e) => { if (e.Data != null) lock (verrou) lignes.Add(e.Data); };
+            p.Start(); p.BeginOutputReadLine();
+            while (!p.WaitForExit(1000))
+            {
+                if (stop.IsCancellationRequested) { try { p.Kill(); } catch { } stop.ThrowIfCancellationRequested(); }
+                if (suivi != null) { var t = DateTime.UtcNow - debut; suivi(new Avancement { Phase = "Windows Defender analyse le disque", Courant = "Temps écoulé : " + (int)t.TotalMinutes + " min " + t.Seconds.ToString("D2") + " s. Cela peut durer longtemps sur un gros disque." }); }
+            }
+            p.WaitForExit();
+            if (p.ExitCode != 0 && p.ExitCode != 2) { string fin; lock (verrou) fin = string.Join(" ", lignes.Skip(Math.Max(0, lignes.Count - 3))); throw new InvalidOperationException("Windows Defender n'a pas pu analyser (code " + p.ExitCode + ") : " + fin); }
+        }
+        var r = new List<DetectionDefender>(); string menace = "";
+        lock (verrou)
+        {
+            foreach (var brute in lignes)
+            {
+                var l = brute.Trim(); int i = l.IndexOf(" : "); if (i < 0) continue;
+                var cle = l.Substring(0, i).Trim().ToLowerInvariant(); var val = l.Substring(i + 3).Trim();
+                if (cle == "threat") menace = val;
+                else if ((cle == "file" || cle == "containerfile") && menace != "") r.Add(new DetectionDefender { Menace = menace, Fichier = val });
+            }
+        }
+        return r;
+    }
+
+    static bool MenaceLegere(string menace)
+    {
+        int i = menace.IndexOf(':'); var famille = i > 0 ? menace.Substring(0, i) : menace;
+        return MenacesLegeres.Any(x => string.Equals(x, famille, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static int FusionnerDefender(PlanDisque plan, string racineBrute, List<DetectionDefender> detections)
+    {
+        string racine = Normaliser(racineBrute); int ajouts = 0;
+        var parChemin = new Dictionary<string, ElementPlan>(StringComparer.OrdinalIgnoreCase); foreach (var e in plan.Elements) parChemin[e.Chemin] = e;
+        foreach (var d in detections)
+        {
+            int fl = d.Fichier.IndexOf("->"); bool archive = fl >= 0; var p = archive ? d.Fichier.Substring(0, fl) : d.Fichier;
+            if (!p.StartsWith(racine, StringComparison.OrdinalIgnoreCase) || p.IndexOf("\\" + DossierQuarantaine + "\\", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            bool legere = MenaceLegere(d.Menace); var note = "Windows Defender : " + d.Menace;
+            ElementPlan e;
+            if (parChemin.TryGetValue(p, out e))
+            {
+                if (e.Detail.IndexOf(note, StringComparison.Ordinal) < 0) e.Detail += " | " + note;
+                if (!legere && !archive && (e.Type == "RESTE" || e.Type == "A_VERIFIER")) e.Type = "ISOLER";
+                continue;
+            }
+            int attr = 0; try { attr = (int)File.GetAttributes(Long(p)) & 0x3FFFF; } catch { }
+            var type = (legere || archive) ? "A_VERIFIER" : "ISOLER";
+            var detail = archive ? "Dans une archive : " + note : (legere ? note + " (souvent un outil ou un crack de jeu)" : "Détecté par " + note);
+            e = new ElementPlan { Type = type, Chemin = p, Relatif = Relatif(p, racine), Attr = attr, Detail = detail };
+            plan.Elements.Add(e); parChemin[p] = e; ajouts++;
+        }
+        plan.DefenderFait = true; plan.MenacesDefender = detections.Count;
+        return ajouts;
+    }
+
+    // ---------- Bibliotheque d'empreintes des copies maitres ----------
+    public static string DossierBibliotheque() { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RotaAntivirus", "Bibliotheque"); }
+
+    static string NomFichierReference(string nom) { foreach (var c in Path.GetInvalidFileNameChars()) nom = nom.Replace(c, '_'); return nom + ".ref"; }
+
+    public static List<InfoReference> ListerReferences(string baseBib = null)
+    {
+        var b = baseBib ?? DossierBibliotheque(); var r = new List<InfoReference>(); if (!Directory.Exists(b)) return r;
+        foreach (var f in Directory.GetFiles(b, "*.ref").OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+        {
+            var i = new InfoReference { Nom = Path.GetFileNameWithoutExtension(f) };
+            foreach (var l in File.ReadLines(f, Encoding.UTF8))
+            {
+                if (l.StartsWith("#source\t")) i.Source = l.Substring(8); else if (l.StartsWith("#nom\t")) i.Nom = l.Substring(5); else if (l.StartsWith("#date\t")) i.Date = l.Substring(6); else if (!l.StartsWith("#")) i.Fichiers++;
+            }
+            r.Add(i);
+        }
+        return r;
+    }
+
+    public static void SupprimerReference(string nom, string baseBib = null)
+    {
+        var f = Path.Combine(baseBib ?? DossierBibliotheque(), NomFichierReference(nom)); if (File.Exists(f)) File.Delete(f);
+    }
+
+    // Enregistre l'empreinte de chaque programme d'une copie maitre. Refuse une copie qui porte un virus connu.
+    public static int CreerReference(string dossierBrut, Action<Avancement> suivi, CancellationToken stop, string baseBib = null)
+    {
+        var d = Path.GetFullPath(dossierBrut).TrimEnd('\\'); var nom = Path.GetFileName(d);
+        if (string.IsNullOrEmpty(nom)) throw new InvalidOperationException("Choisis le dossier d'un jeu, pas la racine d'un disque.");
+        var fichiers = Directory.GetFiles(Long(d), "*", SearchOption.AllDirectories).Select(Court).Where(x => ExtensionsSurveillees.Contains(Path.GetExtension(x).ToLowerInvariant())).ToList();
+        var lignes = new List<string> { "#nom\t" + nom, "#source\t" + d, "#date\t" + DateTime.Now.ToString("dd/MM/yyyy HH:mm") };
+        var infectes = new List<string>(); int n = 0;
+        foreach (var f in fichiers)
+        {
+            stop.ThrowIfCancellationRequested(); n++;
+            if (suivi != null && n % 10 == 1) suivi(new Avancement { Phase = "Création de la référence", Fait = n, Total = fichiers.Count, Courant = f.Substring(d.Length + 1) });
+            var info = new FileInfo(Long(f)); string empreinte;
+            if (info.Length <= 256L * 1024 * 1024 && ExtensionsPe.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            {
+                var b = File.ReadAllBytes(Long(f)); string etat;
+                if (Reparateur.Nettoyer(b, out etat) != null || Reparateur.EstForme2(b) || FauxGrenam(b)) { infectes.Add(f.Substring(d.Length + 1)); continue; }
+                empreinte = Empreinte(b);
+            }
+            else empreinte = EmpreinteFichier(f);
+            lignes.Add(f.Substring(d.Length + 1) + "\t" + info.Length + "\t" + empreinte);
+        }
+        if (infectes.Count > 0) throw new InvalidOperationException("Cette copie maître porte un virus (" + infectes.Count + " fichier(s), dont " + infectes[0] + "). Nettoie-la d'abord : aucune référence n'a été créée.");
+        var bas = baseBib ?? DossierBibliotheque(); Directory.CreateDirectory(bas);
+        File.WriteAllLines(Path.Combine(bas, NomFichierReference(nom)), lignes, new UTF8Encoding(false));
+        return lignes.Count - 3;
+    }
+
+    // Compare les jeux du disque a leurs copies maitres : tout programme modifie est signale, meme par un virus inconnu.
+    public static int ComparerBibliotheque(string racineBrute, PlanDisque plan, Action<Avancement> suivi, CancellationToken stop, string baseBib = null)
+    {
+        string racine = Normaliser(racineBrute), b = baseBib ?? DossierBibliotheque(); int diffs = 0;
+        if (!Directory.Exists(b)) return 0;
+        var parChemin = new Dictionary<string, ElementPlan>(StringComparer.OrdinalIgnoreCase); foreach (var e in plan.Elements) parChemin[e.Chemin] = e;
+        foreach (var fr in Directory.GetFiles(b, "*.ref"))
+        {
+            string nom = Path.GetFileNameWithoutExtension(fr), source = ""; var refs = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (var l in File.ReadLines(fr, Encoding.UTF8))
+            {
+                if (l.StartsWith("#nom\t")) nom = l.Substring(5); else if (l.StartsWith("#source\t")) source = l.Substring(8);
+                else if (!l.StartsWith("#")) { var c = l.Split('\t'); if (c.Length == 3) refs[c[0]] = c; }
+            }
+            var candidats = new List<string>(); var pile = new Stack<KeyValuePair<string, int>>(); pile.Push(new KeyValuePair<string, int>(racine.TrimEnd('\\'), 0));
+            while (pile.Count > 0)
+            {
+                var x = pile.Pop(); if (x.Value >= 3) continue; string[] sous;
+                try { sous = Directory.GetDirectories(Long(x.Key)).Select(Court).ToArray(); } catch { continue; }
+                foreach (var s in sous)
+                {
+                    var n = Path.GetFileName(s); if (n == DossierQuarantaine || n.StartsWith("$") || n == "System Volume Information") continue;
+                    if (string.Equals(n, nom, StringComparison.OrdinalIgnoreCase)) candidats.Add(s); else pile.Push(new KeyValuePair<string, int>(s, x.Value + 1));
+                }
+            }
+            foreach (var cand in candidats)
+            {
+                if (string.Equals(cand.TrimEnd('\\'), source.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) continue;
+                var fichiers = Directory.GetFiles(Long(cand), "*", SearchOption.AllDirectories).Select(Court).Where(x => ExtensionsSurveillees.Contains(Path.GetExtension(x).ToLowerInvariant())).ToList(); int k = 0;
+                foreach (var f in fichiers)
+                {
+                    stop.ThrowIfCancellationRequested(); k++;
+                    var rel = f.Substring(cand.TrimEnd('\\').Length + 1);
+                    if (suivi != null && k % 10 == 1) suivi(new Avancement { Phase = "Comparaison avec « " + nom + " »", Fait = k, Total = fichiers.Count, Courant = rel });
+                    string[] attendu; long taille = new FileInfo(Long(f)).Length; string detail = null, type = "A_VERIFIER", src = "", emp = "";
+                    if (!refs.TryGetValue(rel, out attendu)) detail = "Programme absent de ta copie maître « " + nom + " »";
+                    else if (taille.ToString() != attendu[1] || EmpreinteFichier(f) != attendu[2])
+                    {
+                        var maitre = Path.Combine(source, rel);
+                        if (File.Exists(Long(maitre)) && new FileInfo(Long(maitre)).Length.ToString() == attendu[1] && EmpreinteFichier(maitre) == attendu[2]) { type = "RESTAURER"; src = maitre; emp = attendu[2]; detail = "Modifié : remis depuis ta copie maître « " + nom + " »"; }
+                        else detail = "Différent de ta copie maître « " + nom + " » : branche le disque maître pour le remettre";
+                    }
+                    if (detail == null) continue;
+                    diffs++; ElementPlan e;
+                    if (parChemin.TryGetValue(f, out e))
+                    {
+                        if (type == "RESTAURER" && e.Type != "REPARER") { e.Type = type; e.Source = src; e.Empreinte = emp; e.CheminG = ""; e.RelatifG = ""; }
+                        e.Detail += " | " + detail; continue;
+                    }
+                    int attr = 0; try { attr = (int)File.GetAttributes(Long(f)) & 0x3FFFF; } catch { }
+                    e = new ElementPlan { Type = type, Chemin = f, Relatif = Relatif(f, racine), Attr = attr, Detail = detail, Source = src, Empreinte = emp };
+                    plan.Elements.Add(e); parChemin[f] = e;
+                }
+            }
+        }
+        plan.BibliothequeFaite = true; plan.DifferencesBibliotheque = diffs;
+        return diffs;
+    }
+
+    // ---------- Certificat de livraison ----------
+    static string Html(string s) { return System.Net.WebUtility.HtmlEncode(s ?? ""); }
+
+    public static string EcrireCertificat(string dossier, string disque, string client, VerdictDisque v, PlanDisque p, string logoBase64, string version)
+    {
+        if (v.Niveau != "PRET") throw new InvalidOperationException("Le certificat n'est possible qu'avec le verdict Prêt.");
+        Directory.CreateDirectory(dossier); string racine = Normaliser(disque), nomVol = "", taille = "";
+        try { var di = new DriveInfo(racine); nomVol = di.VolumeLabel; taille = (di.TotalSize / 1073741824) + " Go"; } catch { }
+        var date = DateTime.Now; var serie = SerieDisque(racine);
+        var controles = new List<string> { "Moteur ROTA : Expiro, Grenam, PlugX et UPX1" };
+        if (p.DefenderFait) controles.Add("Windows Defender : analyse complète du disque");
+        if (p.BibliothequeFaite) controles.Add("Bibliothèque RotaGaming : programmes comparés aux copies maîtres");
+        string id; using (var s = SHA256.Create()) id = BitConverter.ToString(s.ComputeHash(Encoding.UTF8.GetBytes(serie + "|" + client + "|" + date.ToString("o") + "|" + p.Examines))).Replace("-", "").Substring(0, 12);
+        var t = new StringBuilder();
+        t.Append("<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><title>Certificat ROTA ").Append(id).Append("</title><style>");
+        t.Append("body{margin:0;background:#eef1f5;font-family:'Segoe UI',system-ui,sans-serif;color:#141922}.page{max-width:760px;margin:24px auto;background:#fff;border-radius:10px;padding:44px 52px;box-shadow:0 6px 30px rgba(0,0,0,.12)}");
+        t.Append(".tete{display:flex;justify-content:space-between;align-items:center;background:#0a1018;margin:-44px -52px 30px;padding:22px 52px;border-radius:10px 10px 0 0}.tete img{height:30px}.tete span{color:#ffb07a;font:600 12px Consolas,monospace;letter-spacing:.16em}");
+        t.Append("h1{font-size:28px;margin:0 0 6px}.ok{display:inline-block;background:#e3f8ee;color:#0d6b43;border:1px solid #8fd9b4;border-radius:6px;padding:6px 12px;font-weight:700;margin:10px 0 22px}");
+        t.Append("table{width:100%;border-collapse:collapse;margin:10px 0 20px}td{padding:9px 6px;border-bottom:1px solid #e3e7ee;font-size:15px}td:first-child{color:#5a6474;width:38%}");
+        t.Append("ul{margin:6px 0 20px;padding-left:20px;line-height:1.6}.note{font-size:12.5px;color:#5a6474;border-top:1px solid #e3e7ee;padding-top:14px}.id{font:600 13px Consolas,monospace}");
+        t.Append("button{margin:18px 0 0;padding:10px 18px;font-size:15px;border:0;border-radius:6px;background:#0a1018;color:#fff;cursor:pointer}@media print{body{background:#fff}.page{box-shadow:none;margin:0}button{display:none}}");
+        t.Append("</style></head><body><div class=\"page\"><div class=\"tete\">");
+        if (!string.IsNullOrEmpty(logoBase64)) t.Append("<img alt=\"RotaGaming\" src=\"data:image/png;base64,").Append(logoBase64).Append("\">"); else t.Append("<strong style=\"color:#fff\">ROTAGAMING</strong>");
+        t.Append("<span>CERTIFICAT DE CONTRÔLE</span></div><h1>Disque contrôlé avant livraison</h1><div class=\"ok\">Verdict : prêt pour la livraison</div><table>");
+        t.Append("<tr><td>Client</td><td>").Append(Html(string.IsNullOrWhiteSpace(client) ? "Non précisé" : client.Trim())).Append("</td></tr>");
+        t.Append("<tr><td>Disque</td><td>").Append(Html((nomVol == "" ? "Sans nom" : nomVol) + (taille == "" ? "" : " (" + taille + ")"))).Append(" — n° ").Append(Html(serie)).Append("</td></tr>");
+        t.Append("<tr><td>Date du contrôle</td><td>").Append(date.ToString("dd/MM/yyyy à HH:mm")).Append("</td></tr>");
+        t.Append("<tr><td>Fichiers sur le disque</td><td>").Append(p.Total.ToString("N0")).Append(" dont ").Append(p.Examines.ToString("N0")).Append(" programmes examinés</td></tr>");
+        t.Append("<tr><td>Numéro du certificat</td><td class=\"id\">").Append(id).Append("</td></tr></table><strong>Contrôles effectués</strong><ul>");
+        foreach (var c in controles) t.Append("<li>").Append(Html(c)).Append("</li>");
+        t.Append("</ul><p class=\"note\">Ce certificat atteste qu'aucun virus connu n'a été trouvé sur ce disque à la date indiquée, avec ROTA Antivirus ").Append(Html(version)).Append(". Il ne garantit pas l'absence de tout virus, ni la sécurité de l'ordinateur sur lequel le disque sera branché.</p>");
+        t.Append("<button onclick=\"window.print()\">Imprimer ou enregistrer en PDF</button></div></body></html>");
+        var c2 = Path.Combine(dossier, "certificat-" + date.ToString("yyyyMMdd-HHmmss") + "-" + id + ".html");
+        File.WriteAllText(c2, t.ToString(), new UTF8Encoding(true)); return c2;
+    }
+
     // Fait toutes les etapes dans le bon ordre. S'arrete et explique si une etape est impossible.
-    public static ResultatAction ToutNettoyer(string racineBrute, Action<Avancement> suivi, bool essai = false, string baseArchives = null)
+    public static ResultatAction ToutNettoyer(string racineBrute, Action<Avancement> suivi, bool essai = false, string baseArchives = null, List<ElementPlan> extras = null)
     {
         string racine = Normaliser(racineBrute); bool systeme = !essai && EstDisqueSysteme(racine); var r = new ResultatAction(); int etape = 0, total = systeme ? 2 : 6;
         Action<string> annonce = t => { etape++; if (suivi != null) suivi(new Avancement { Phase = "Étape " + etape + "/" + total + " : " + t }); };
@@ -561,6 +787,8 @@ public static class Moteur
         }
         annonce("réparation des programmes");
         var plan = Analyser(racine, null, CancellationToken.None);
+        // Les decouvertes de Windows Defender et de la bibliotheque ne sont pas refaites : on les reprend telles quelles.
+        if (extras != null) foreach (var x in extras) { if (!plan.Elements.Any(e => string.Equals(e.Chemin, x.Chemin, StringComparison.OrdinalIgnoreCase)) && File.Exists(Long(x.Chemin))) plan.Elements.Add(x); }
         if (!faire("Réparation", () => Appliquer(plan, racine, suivi, essai, "reparer"))) return r;
         annonce("isolement des fichiers irréparables");
         if (!faire("Isolement", () => Appliquer(plan, racine, suivi, essai, "isoler"))) return r;

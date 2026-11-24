@@ -4,7 +4,7 @@
   const cv = document.getElementById('mission'); const g = cv.getContext('2d');
   const reduit = window.matchMedia('(prefers-reduced-motion: reduce)');
   const COUL = { veille: [85, 230, 255], scan: [85, 230, 255], alerte: [255, 169, 77], ok: [98, 245, 181] };
-  const NOMS = { REPARER: 'À RÉPARER', REMPLACER: 'À REMPLACER', GRENAM: 'FAUX PROGRAMME', ISOLER: 'À ISOLER', RETELECHARGER: 'À RETÉLÉCHARGER', A_VERIFIER: 'À VÉRIFIER' };
+  const NOMS = { REPARER: 'À RÉPARER', REMPLACER: 'À REMPLACER', RESTAURER: 'À RESTAURER', GRENAM: 'FAUX PROGRAMME', ISOLER: 'À ISOLER', RETELECHARGER: 'À RETÉLÉCHARGER', A_VERIFIER: 'À VÉRIFIER' };
   const POLICE = '"Cascadia Mono",Consolas,monospace';
   let mode = 'veille', pct = 0, W = 0, H = 0, cx = 0, cy = 0, R = 0, t = 0, avant = 0, rot = 0, balai = -Math.PI / 2, numero = 0;
   let c = COUL.veille.slice();

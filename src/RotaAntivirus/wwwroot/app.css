@@ -87,6 +87,8 @@ p{margin:0;font-size:16px;line-height:1.55;color:#D0DDEB}
 .etapes{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:9px;font-size:15px;line-height:1.45;color:#D9E6F5}
 .etapes strong{color:#fff}.note{font-size:13.5px;padding:10px 12px;border:1px solid rgba(190,220,250,.24);border-radius:6px}
 #notif{color:#62F5B5}
+.certificat{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid rgba(98,245,181,.4);border-radius:6px}
+.certificat label{font-size:13px;color:#C6D5E5}.ligne-certificat{display:flex;flex-wrap:wrap;gap:8px}.ligne-certificat .recherche{max-width:none;flex:1 1 200px;min-height:44px}
 .btn.tout{flex-basis:100%;min-height:52px;font-size:16px;letter-spacing:.04em}
 .btn.isoler{background:#FFA94D;color:#1B1004;box-shadow:0 0 22px rgba(255,169,77,.35)}
 .telemetrie{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid rgba(135,190,240,.22);border-radius:6px;background:rgba(9,15,26,.82);overflow:hidden}

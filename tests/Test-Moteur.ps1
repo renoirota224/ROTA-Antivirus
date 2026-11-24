@@ -94,6 +94,36 @@ try {
     foreach ($s in $sains) { try { [byte[]]$q = [IO.File]::ReadAllBytes($s.FullName); if ($null -ne [Reparateur]::RemettreReloc($q) -or $null -ne [Reparateur]::RemettreAppelDemarrage($q) -or [Reparateur]::AppelsPendants($q, $q) -gt 0) { $touches++ } } catch { } }
     Test-Point "Programmes Windows sains jamais modifies ($($sains.Count) testes)" ($touches -eq 0)
 
+    # Bibliotheque : une copie maitre propre, un disque ou le programme a ete modifie.
+    $m = "$t-m\JeuTest"; [void](New-Item -ItemType Directory -Path "$m\bin"); [IO.File]::WriteAllText("$m\bin\jeu.exe", 'programme propre'); [IO.File]::WriteAllText("$m\lisezmoi.txt", 'texte')
+    $nb = [Moteur]::CreerReference($m, $null, [Threading.CancellationToken]::None, "$t-bib")
+    Test-Point 'Reference creee pour les programmes seulement' ($nb -eq 1 -and @([Moteur]::ListerReferences("$t-bib")).Count -eq 1)
+    $g2 = "$t-g"; [void](New-Item -ItemType Directory -Path "$g2\JEUX\JeuTest\bin"); [IO.File]::WriteAllText("$g2\JEUX\JeuTest\bin\jeu.exe", 'programme INFECTE'); [IO.File]::WriteAllText("$g2\JEUX\JeuTest\bin\ajout.exe", 'inconnu')
+    $pg = [Moteur]::Analyser($g2, $null, [Threading.CancellationToken]::None); $dg = [Moteur]::ComparerBibliotheque($g2, $pg, $null, [Threading.CancellationToken]::None, "$t-bib")
+    $rest = @($pg.Elements | Where-Object { $_.Type -eq 'RESTAURER' }); $nouv = @($pg.Elements | Where-Object { $_.Detail -like 'Programme absent*' })
+    Test-Point 'Programme modifie a restaurer depuis la copie maitre' ($dg -eq 2 -and $rest.Count -eq 1 -and $nouv.Count -eq 1)
+    $rg = [Moteur]::Appliquer($pg, $g2, $null, $true, 'reparer')
+    Test-Point 'Programme remis identique a la copie maitre' ($rg.Ok -eq 1 -and (Get-Content -LiteralPath "$g2\JEUX\JeuTest\bin\jeu.exe") -eq 'programme propre')
+    [void][Moteur]::Annuler($g2, $true); Test-Point 'Restauration annulable' ((Get-Content -LiteralPath "$g2\JEUX\JeuTest\bin\jeu.exe") -eq 'programme INFECTE')
+    [Moteur]::SupprimerReference('JeuTest', "$t-bib"); Test-Point 'Reference retiree' (@([Moteur]::ListerReferences("$t-bib")).Count -eq 0)
+
+    # Windows Defender : lecture des resultats et classement.
+    $pdf = New-Object PlanDisque; $dl = New-Object 'System.Collections.Generic.List[DetectionDefender]'
+    foreach ($x in @(@('Virus:Win32/Expiro.EB!MTB', "$g2\a.exe"), @('HackTool:Win32/Crack', "$g2\crack.exe"), @('Trojan:Win32/Test', "$g2\pack.zip->x.exe"), @('Virus:Win32/X', "$g2\_QUARANTAINE_ROTA\y.exe"))) { $dd = New-Object DetectionDefender; $dd.Menace = $x[0]; $dd.Fichier = $x[1]; $dl.Add($dd) }
+    $na = [Moteur]::FusionnerDefender($pdf, $g2, $dl)
+    $ty = @{}; foreach ($e in $pdf.Elements) { $ty[$e.Relatif] = $e.Type }
+    Test-Point 'Defender : virus isole, crack a verifier, archive a verifier, quarantaine ignoree' ($na -eq 3 -and $ty['a.exe'] -eq 'ISOLER' -and $ty['crack.exe'] -eq 'A_VERIFIER' -and $ty['pack.zip'] -eq 'A_VERIFIER')
+    # Sur certains PC (ou serveurs de fabrication) Defender est coupe : le test est alors simplement saute.
+    try { $vd2 = [Moteur]::AnalyseDefender($m, $null, [Threading.CancellationToken]::None); Test-Point 'Defender analyse un dossier sain sans menace' ($vd2.Count -eq 0) }
+    catch { "SAUTE Defender indisponible ici : $($_.Exception.InnerException.Message)" }
+
+    # Certificat de livraison.
+    $vp2 = New-Object VerdictDisque; $vp2.Niveau = 'PRET'; $pp2 = New-Object PlanDisque; $pp2.Examines = 12
+    $cert = [Moteur]::EcrireCertificat("$t-cert", $g2, 'Client <b>test</b>', $vp2, $pp2, '', '1.6.0'); $ch = [IO.File]::ReadAllText($cert)
+    Test-Point 'Certificat cree et texte protege' ($ch -like '*Client &lt;b&gt;test&lt;/b&gt;*' -and $ch -like '*prêt pour la livraison*')
+    $vp2.Niveau = 'PAS_PRET'; $refusc = $false; try { [void][Moteur]::EcrireCertificat("$t-cert", $g2, 'x', $vp2, $pp2, '', '1.6.0') } catch { $refusc = $true }
+    Test-Point 'Pas de certificat sans verdict Pret' $refusc
+
     # Parcours complet : reparer, ranger, sortir, remettre, puis tout annuler.
     $b = "$t-b"; [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\1"); [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\DOCS")
     [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\CEFHelper.exe", 'faux'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\wsc.dll", 'faux2'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\DOCS\doc.bin", 'document')
@@ -114,6 +144,6 @@ try {
     Test-Point 'Deuxieme annulation sans effet' ($a3.Ok -eq 0 -and $a3.Echecs -eq 0)
 }
 finally {
-    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d", "$t-e", "$t-f", "$t-fa") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
+    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d", "$t-e", "$t-f", "$t-fa", "$t-m", "$t-bib", "$t-g", "$t-cert") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
 }
 "Echecs : $echecs"; if ($echecs -gt 0) { exit 1 }

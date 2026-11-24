@@ -19,6 +19,7 @@
     <nav class="onglets" aria-label="Sections">
       <button class="onglet actif" data-vue="controle">Contrôle</button>
       <button class="onglet" data-vue="quarantaine">Quarantaine</button>
+      <button class="onglet" data-vue="bibliotheque">Bibliothèque</button>
       <button class="onglet" data-vue="historique">Historique</button>
       <button class="onglet" data-vue="aide">Aide</button>
     </nav>
@@ -83,6 +84,14 @@
           <button id="bNouvelle" class="btn sec">Analyser à nouveau</button>
           <button id="bRapport" class="btn sec">Ouvrir le rapport</button>
         </div>
+        <div class="actions">
+          <button id="bDefender" class="btn sec">Analyse approfondie (Windows Defender)</button>
+          <button id="bComparer" class="btn sec">Comparer à ma bibliothèque</button>
+        </div>
+        <div id="zoneCertificat" class="certificat" hidden>
+          <label for="clientNom">Nom du client</label>
+          <div class="ligne-certificat"><input id="clientNom" class="recherche" type="text" maxlength="80" placeholder="Exemple : Mamadou Diallo"><button id="bCertificat" class="btn prim">Certificat de livraison</button></div>
+        </div>
         <div class="actions secondaires">
           <button id="bRemettre" class="btn lien">Remettre la quarantaine</button>
           <button id="bAnnuler" class="btn lien">Annuler la dernière réparation</button>
@@ -94,6 +103,13 @@
         <p id="texteQuarantaine"></p>
         <div id="listeQuarantaine" class="liste" tabindex="0" aria-label="Sessions de quarantaine"></div>
         <div class="actions"><button id="bActuQ" class="btn sec">Actualiser</button><button id="bVersControle" class="btn sec">Retour au contrôle</button></div>
+      </div>
+
+      <div id="ecranBibliotheque" class="ecran" hidden>
+        <h1>Bibliothèque de tes copies maîtres</h1>
+        <p>Ajoute le dossier <strong>propre</strong> de chaque jeu. ROTA Antivirus enregistre l'empreinte de ses programmes. Ensuite, sur n'importe quel disque, il repère tout programme modifié, même par un virus inconnu, et peut le remettre depuis ta copie maître.</p>
+        <div id="listeBibliotheque" class="liste grande" tabindex="0" aria-label="Copies maîtres"></div>
+        <div class="actions"><button id="bAjouterRef" class="btn prim">Ajouter une copie maître</button></div>
       </div>
 
       <div id="ecranHistorique" class="ecran" hidden>
@@ -113,12 +129,13 @@
           <li>Retélécharger ce qui a été isolé, puis <strong>sortir la quarantaine</strong> du disque.</li>
           <li>Analyser encore. Livre seulement avec le verdict <strong>Prêt</strong>, après avoir lancé quelques jeux.</li>
         </ol>
-        <p class="note">ROTA Antivirus reconnaît Expiro, Grenam, PlugX et UPX1. Il ne remplace pas un antivirus complet.</p>
+        <p>Pour aller plus loin : <strong>Analyse approfondie</strong> utilise le moteur de Windows Defender sur tout le disque, et <strong>Comparer à ma bibliothèque</strong> repère tout programme modifié dans tes jeux. Quand le verdict est <strong>Prêt</strong>, crée le <strong>certificat de livraison</strong> pour ton client.</p>
+        <p class="note">ROTA Antivirus combine son propre moteur (Expiro, Grenam, PlugX, UPX1), Windows Defender et tes copies maîtres. Aucun logiciel ne peut garantir l'absence de tout virus.</p>
       </div>
     </section>
   </main>
 
-  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.5.0</span></footer>
+  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.6.0</span></footer>
   <div class="ligne-balayage" aria-hidden="true"></div>
 </div>
 <script src="mission.js"></script>
