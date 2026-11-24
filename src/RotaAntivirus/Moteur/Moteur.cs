@@ -21,7 +21,7 @@ public class PlanDisque
     public List<ElementPlan> Elements = new List<ElementPlan>();
 }
 
-public class Avancement { public int Fait, Total, Trouves; public string Courant = "", Phase = ""; }
+public class Avancement { public int Fait, Total, Trouves; public string Courant = "", Phase = ""; public List<string> Cibles = new List<string>(); }
 public class EtatDisque { public bool RecyclerDossier, Blocage, Quarantaine; }
 public class VerdictDisque { public string Niveau = "", Titre = ""; public List<string> Bloquants = new List<string>(), Reserves = new List<string>(); public int ATraiter; }
 public class ResultatAction { public int Ok, Echecs; public string Session = ""; public List<string> Messages = new List<string>(); }
@@ -257,7 +257,7 @@ public static class Moteur
         foreach (var f in liste)
         {
             stop.ThrowIfCancellationRequested(); n++;
-            if (suivi != null && (DateTime.UtcNow - dernier).TotalMilliseconds > 150) { dernier = DateTime.UtcNow; suivi(new Avancement { Phase = "Analyse", Fait = n, Total = liste.Count, Trouves = brut.Count(x => x.Type != "RESTE"), Courant = Relatif(f.Chemin, racine) }); }
+            if (suivi != null && (DateTime.UtcNow - dernier).TotalMilliseconds > 150) { dernier = DateTime.UtcNow; suivi(new Avancement { Phase = "Analyse", Fait = n, Total = liste.Count, Trouves = brut.Count(x => x.Type != "RESTE"), Courant = Relatif(f.Chemin, racine), Cibles = brut.Where(x => x.Type != "RESTE").Reverse().Take(8).Select(x => x.Type + "|" + x.Relatif).ToList() }); }
             var rel = Relatif(f.Chemin, racine);
             if ((rel.StartsWith("RECYCLER.BIN\\", StringComparison.OrdinalIgnoreCase) || rel.IndexOf("\\RECYCLER.BIN\\", StringComparison.OrdinalIgnoreCase) >= 0) && NomsPlugX.Contains(f.Nom.ToLowerInvariant())) { brut.Add(Element("ISOLER", f, racine, "Fichier PlugX", null)); continue; }
             if (f.Ext == ".lnk")

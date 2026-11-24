@@ -87,6 +87,23 @@ p{margin:0;font-size:16px;line-height:1.55;color:#D0DDEB}
 .etapes{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:9px;font-size:15px;line-height:1.45;color:#D9E6F5}
 .etapes strong{color:#fff}.note{font-size:13.5px;padding:10px 12px;border:1px solid rgba(190,220,250,.24);border-radius:6px}
 #notif{color:#62F5B5}
+.telemetrie{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid rgba(135,190,240,.22);border-radius:6px;background:rgba(9,15,26,.82);overflow:hidden}
+.telemetrie>div{min-width:0;padding:7px 12px;border-left:1px solid rgba(135,190,240,.16)}.telemetrie>div:first-child{border-left:0}
+.telemetrie span{display:block;font-size:10px;letter-spacing:.11em;color:#AFC0D2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.telemetrie strong{display:block;margin-top:2px;font-size:15px;font-weight:600;color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .5s}
+.zone-noyau{position:relative;flex:1.35 1 500px;align-self:stretch;min-height:440px;display:flex;flex-direction:column;gap:8px}
+.noyau,.noyau.scan{position:relative;flex:1;width:100%;min-height:380px;aspect-ratio:auto}
+.mission{position:absolute;inset:0;width:100%;height:100%;display:block}
+.centre{pointer-events:none}
+.plaque{display:flex;flex-direction:column;align-items:center;gap:1px;padding:9px 13px;border-radius:50%;min-width:118px;background:radial-gradient(circle,rgba(6,10,18,.86) 42%,rgba(6,10,18,0) 74%)}
+.plaque .coeur-valeur{font-size:38px}.plaque .coeur-haut{font-size:10.5px}.plaque .coeur-bas{font-size:12px;max-width:150px}
+.coin{position:absolute;width:22px;height:22px;border:solid var(--c);border-width:0;opacity:.8;transition:border-color .5s}
+.c1{left:0;top:0;border-left-width:2px;border-top-width:2px}.c2{right:0;top:0;border-right-width:2px;border-top-width:2px}.c3{right:0;bottom:0;border-right-width:2px;border-bottom-width:2px}.c4{left:0;bottom:0;border-left-width:2px;border-bottom-width:2px}
+.flux{height:58px;overflow:hidden;padding:5px 10px;border:1px solid rgba(135,190,240,.16);border-radius:4px;background:rgba(6,11,20,.7);font-size:11px;line-height:12px;color:#A9C0D6;display:flex;flex-direction:column;justify-content:flex-end}
+.flux div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.flux div:last-child{color:var(--c)}.flux .alerte-flux,.flux div.alerte-flux:last-child{color:#FFA94D}
+.ligne-balayage{position:absolute;left:0;right:0;top:0;height:120px;z-index:2;pointer-events:none;background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--c) 7%,transparent) 88%,color-mix(in srgb,var(--c) 28%,transparent));animation:ecran 7s linear infinite}
+@keyframes ecran{from{transform:translateY(-130px)}to{transform:translateY(100vh)}}
+@media (max-width:1040px){.telemetrie{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @keyframes tourne{to{transform:rotate(360deg)}}
 @keyframes derive{to{transform:translate(44px,44px)}}
 @keyframes respire{50%{transform:scale(1.08);opacity:.72}}

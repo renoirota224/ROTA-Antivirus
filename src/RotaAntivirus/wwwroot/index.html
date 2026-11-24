@@ -25,19 +25,23 @@
     <div class="choix"><span class="mono sous">DISQUE</span><div id="disques" class="choix" role="group" aria-label="Choix du disque"></div></div>
   </header>
 
+  <div class="dessus telemetrie mono" aria-label="Télémétrie de l'analyse">
+    <div><span>ÉTAT</span><strong id="tPhase">EN VEILLE</strong></div>
+    <div><span>CHRONO</span><strong id="tTemps">T+00:00</strong></div>
+    <div><span>DÉBIT</span><strong id="tDebit">0 /s</strong></div>
+    <div><span>PROGRAMMES LUS</span><strong id="tLus">0</strong></div>
+    <div><span>CIBLES</span><strong id="tCibles">0</strong></div>
+    <div><span>DISQUE</span><strong id="tDisque">--</strong></div>
+  </div>
+
   <main class="dessus principal">
     <div class="zone-noyau">
       <div id="noyau" class="noyau">
-        <svg viewBox="0 0 460 460" fill="none" aria-hidden="true">
-          <g class="r1"><circle class="trait faible" cx="230" cy="230" r="218" stroke-dasharray="2 9" stroke-width="2"/><path class="trait" d="M230 12a218 218 0 0 1 154 64" stroke-width="3"/><path class="trait" d="M230 448a218 218 0 0 1-154-64" stroke-width="3"/></g>
-          <g class="r2"><circle cx="230" cy="230" r="182" stroke="#BFE4FF" stroke-opacity=".22"/><path class="trait" d="M412 230a182 182 0 0 1-53 129" stroke-width="7"/><path class="trait" d="M48 230a182 182 0 0 1 53-129" stroke-width="7"/></g>
-          <g class="r3"><circle class="trait faible" cx="230" cy="230" r="148" stroke-dasharray="26 16" stroke-width="2"/></g>
-          <g class="balai"><path class="remplir" d="M230 230 230 62A168 168 0 0 1 349 111Z"/><path class="trait" d="M230 230V62" stroke-width="2"/></g>
-          <circle class="trait moyen fond-noyau" cx="230" cy="230" r="118"/>
-          <circle class="point plein" cx="118" cy="128" r="4"/><circle class="point b plein" cx="356" cy="164" r="3"/><circle class="point c plein" cx="316" cy="356" r="4"/>
-        </svg>
-        <div class="centre"><div id="coeurHaut" class="mono coeur-haut">SYSTÈME</div><div id="coeurValeur" class="coeur-valeur">--</div><div id="coeurBas" class="coeur-bas">En attente</div></div>
+        <canvas id="mission" class="mission" role="img" aria-label="Radar d'analyse du disque"></canvas>
+        <i class="coin c1"></i><i class="coin c2"></i><i class="coin c3"></i><i class="coin c4"></i>
+        <div class="centre"><div class="plaque"><div id="coeurHaut" class="mono coeur-haut">SYSTÈME</div><div id="coeurValeur" class="coeur-valeur">--</div><div id="coeurBas" class="coeur-bas">En attente</div></div></div>
       </div>
+      <div id="fluxDirect" class="flux mono" aria-hidden="true"></div>
     </div>
 
     <section class="vitre panneau" aria-live="polite">
@@ -109,8 +113,10 @@
     </section>
   </main>
 
-  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.1.1</span></footer>
+  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.2.0</span></footer>
+  <div class="ligne-balayage" aria-hidden="true"></div>
 </div>
+<script src="mission.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

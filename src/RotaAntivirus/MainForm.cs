@@ -162,7 +162,7 @@ namespace RotaAntivirus
 
         void Suivi(Avancement a)
         {
-            Envoyer(new { type = "avancement", phase = a.Phase, fait = a.Fait, total = a.Total, trouves = a.Trouves, courant = a.Courant });
+            Envoyer(new { type = "avancement", phase = a.Phase, fait = a.Fait, total = a.Total, trouves = a.Trouves, courant = a.Courant, cibles = a.Cibles });
         }
 
         void Analyse(string disque, string messageAvant = "")

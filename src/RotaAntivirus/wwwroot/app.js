@@ -7,7 +7,17 @@
   const ecrans = ['ecranAccueil', 'ecranAnalyse', 'ecranResultat', 'ecranQuarantaine', 'ecranHistorique', 'ecranAide'];
   const FILTRES = [['tous', 'Tous'], ['traiter', 'À traiter'], ['verifier', 'À vérifier'], ['inerte', 'Inertes']];
   const TRAITER = ['REPARER', 'REMPLACER', 'GRENAM', 'ISOLER', 'RETELECHARGER'];
-  let minuteur = null;
+  let minuteur = null, debut = 0, chrono = null, refFait = 0, refTemps = 0, dernierCourant = '';
+  const mission = window.Mission;
+
+  function afficherChrono() { const s = Math.max(0, Math.floor((Date.now() - debut) / 1000)); $('tTemps').textContent = 'T+' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+  function demarrerChrono() { debut = Date.now(); refFait = 0; refTemps = debut; afficherChrono(); clearInterval(chrono); chrono = setInterval(afficherChrono, 500); }
+  function arreterChrono() { clearInterval(chrono); chrono = null; }
+  function telemetrie(phase, lus, cibles) { $('tPhase').textContent = phase; $('tLus').textContent = nombre(lus); $('tCibles').textContent = String(cibles); $('tDisque').textContent = nomDisque(); }
+  function ajouterFlux(texte, alerte) {
+    const z = $('fluxDirect'), l = document.createElement('div'); l.textContent = (alerte ? '[CIBLE] ' : '> ') + texte; if (alerte) l.className = 'alerte-flux';
+    z.appendChild(l); while (z.children.length > 4) z.removeChild(z.firstChild);
+  }
 
   function montrer(id) { ecrans.forEach((e) => { $(e).hidden = e !== id; }); }
   function ambiance(c) { $('app').className = 'app' + (c ? ' ' + c : ''); }
@@ -50,12 +60,14 @@
     ambiance(''); $('noyau').className = 'noyau'; coeur('SYSTÈME', nomDisque(), 'En attente');
     $('nomDisque').textContent = nomDisque(); $('bLancer').disabled = !etat.disque; $('infos').textContent = "Aucun programme du disque n'est lancé";
     etat.ecranControle = 'ecranAccueil'; if (etat.vue === 'controle') montrer('ecranAccueil');
+    arreterChrono(); mission.vider(); mission.mode('veille'); $('fluxDirect').replaceChildren(); $('tTemps').textContent = 'T+00:00'; $('tDebit').textContent = '0 /s'; telemetrie('EN VEILLE', 0, 0);
   }
 
   function debutTravail(titre) {
     occuper(true); ambiance(''); $('noyau').className = 'noyau scan'; $('titreAnalyse').textContent = titre;
     $('piste').classList.add('indetermine'); $('jauge').style.width = '0'; $('lus').textContent = '0'; $('trouves').textContent = '0'; $('courant').textContent = '';
     coeur('EN COURS', '...', 'Préparation'); controle('ecranAnalyse');
+    mission.vider(); mission.mode('scan'); $('fluxDirect').replaceChildren(); dernierCourant = ''; $('tDebit').textContent = '0 /s'; telemetrie(titre.toUpperCase(), 0, 0); demarrerChrono();
   }
 
   function avancement(m) {
@@ -63,6 +75,11 @@
     $('piste').classList.toggle('indetermine', m.total === 0); $('jauge').style.width = pct + '%'; $('piste').setAttribute('aria-valuenow', String(pct));
     $('lus').textContent = nombre(m.fait); $('trouves').textContent = String(m.trouves); $('courant').textContent = m.courant || m.phase;
     coeur(m.phase.toUpperCase(), m.total > 0 ? pct + '%' : '...', m.total > 0 ? m.fait + ' / ' + m.total : 'Préparation');
+    mission.progres(m.total > 0 ? m.fait / m.total : 0);
+    if (m.courant && m.courant !== dernierCourant) { dernierCourant = m.courant; mission.fichier(); ajouterFlux(m.courant, false); }
+    (m.cibles || []).slice().reverse().forEach((c) => { const i = c.indexOf('|'), type = c.slice(0, i), f = c.slice(i + 1); const cle = 'vu:' + c; if (!etat[cle]) { etat[cle] = true; ajouterFlux(f, true); } mission.cible(type, f); });
+    const now = Date.now(); if (now - refTemps >= 700) { $('tDebit').textContent = nombre(Math.max(0, Math.round((m.fait - refFait) * 1000 / (now - refTemps)))) + ' /s'; refFait = m.fait; refTemps = now; }
+    telemetrie(m.phase.toUpperCase(), m.fait, m.trouves);
   }
 
   function ligneFichier(e, i) {
@@ -113,6 +130,9 @@
     $('bAnnuler').hidden = !(ext && m.quarantaine);
     $('bRapport').hidden = false; $('bNouvelle').hidden = false;
     $('infos').textContent = nombre(m.total) + ' fichiers, ' + nombre(m.examines) + ' examinés' + (m.tronque ? ', ' + m.nbElements + ' à voir dans le rapport' : '');
+    arreterChrono(); Object.keys(etat).forEach((k) => { if (k.startsWith('vu:')) delete etat[k]; });
+    const vraies = m.elements.filter((e) => e.type !== 'RESTE'); mission.vider(); vraies.forEach((e) => mission.cible(e.type, e.relatif)); mission.progres(1); mission.mode(pret ? 'ok' : 'alerte');
+    $('tDebit').textContent = '0 /s'; telemetrie(pret ? 'CONTRÔLE OK' : 'ALERTE', m.examines, vraies.length);
     controle('ecranResultat');
   }
 
@@ -121,6 +141,7 @@
     $('titreResultat').textContent = 'Opération impossible'; $('message').hidden = false; $('message').textContent = t;
     $('points').replaceChildren(); $('liste').replaceChildren(); $('liste').hidden = true; $('outilsListe').hidden = true;
     ['bReparer', 'bRanger', 'bBlocage', 'bSortir', 'bRemettre', 'bAnnuler', 'bRapport'].forEach((b) => { $(b).hidden = true; }); $('bNouvelle').hidden = false;
+    arreterChrono(); mission.vider(); mission.mode('alerte'); telemetrie('ERREUR', 0, 0);
     controle('ecranResultat');
   }
 
