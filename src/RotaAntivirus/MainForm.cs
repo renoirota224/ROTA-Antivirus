@@ -110,6 +110,7 @@ namespace RotaAntivirus
                 case "ranger": if (!occupe && PeutEcrire(disque)) Ranger(disque); break;
                 case "blocage": if (!occupe && PeutEcrire(disque)) Blocage(disque); break;
                 case "caches": if (!occupe && PeutEcrire(disque)) Caches(disque); break;
+                case "tout": if (!occupe && DisqueConnu(disque) && plan != null && string.Equals(disqueAnalyse, disque, StringComparison.OrdinalIgnoreCase)) ToutNettoyer(disque); break;
                 case "sortir": if (!occupe && PeutEcrire(disque)) Sortir(disque); break;
                 case "remettre": if (!occupe && Externe(disque)) Remettre(disque); break;
                 case "annuler": if (!occupe && DisqueConnu(disque)) AnnulerReparation(disque); break;
@@ -238,6 +239,16 @@ namespace RotaAntivirus
         {
             if (!Confirmer("Poser le blocage PlugX sur " + disque + " ?\n\nUn petit fichier vide et protégé nommé RECYCLER.BIN sera créé à la racine.")) return;
             Action2("Pose du blocage", "Blocage", disque, () => Moteur.PoserBlocageDisque(disque));
+        }
+
+        void ToutNettoyer(string disque)
+        {
+            bool sys = Moteur.EstDisqueSysteme(disque);
+            var etapes = sys ? "1. Réparer les programmes de tes dossiers personnels\n2. Isoler ceux qui sont irréparables\n\nWindows et Program Files ne sont pas touchés."
+                : "1. Sortir la quarantaine sur le PC si le disque est plein\n2. Réparer les programmes\n3. Isoler ceux qui sont irréparables\n4. Remettre les fichiers cachés par PlugX\n5. Ranger RECYCLER.BIN\n6. Poser le blocage PlugX";
+            if (!Confirmer("Nettoyer complètement " + disque + " ?\n\n" + etapes + "\n\nRien n'est supprimé : tout reste récupérable. Si une étape échoue, le nettoyage s'arrête et explique pourquoi." + (sys ? "" : "\nNe débranche pas le disque.") + "\n\nContinuer ?")) return;
+            Envoyer(new { type = "action", titre = "Nettoyage complet" });
+            Tache(true, () => { var r = Moteur.ToutNettoyer(disque, Suivi); Fin(); Relancer(disque, string.Join(" ", r.Messages.Take(9))); });
         }
 
         void Caches(string disque)

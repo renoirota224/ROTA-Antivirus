@@ -73,6 +73,7 @@
         </div>
         <div id="liste" class="liste" tabindex="0" aria-label="Fichiers concernés"></div>
         <div class="actions">
+          <button id="bTout" class="btn prim tout">Tout nettoyer</button>
           <button id="bReparer" class="btn prim">Réparer</button>
           <button id="bIsoler" class="btn isoler">Isoler</button>
           <button id="bCaches" class="btn prim">Remettre les fichiers cachés</button>
@@ -103,6 +104,7 @@
 
       <div id="ecranAide" class="ecran" hidden>
         <h1>Préparer un disque client</h1>
+        <p>Le plus simple : <strong>Analyser</strong>, puis <strong>Tout nettoyer</strong>. Les boutons séparés restent disponibles pour faire une seule étape :</p>
         <ol class="etapes">
           <li><strong>Analyser</strong> le disque. Aucun programme n'est lancé.</li>
           <li><strong>Réparer</strong> les programmes récupérables : ils restent à leur place. <strong>Isoler</strong> ceux qui sont irréparables : ils partent en quarantaine.</li>
@@ -116,7 +118,7 @@
     </section>
   </main>
 
-  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.3.0</span></footer>
+  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.4.0</span></footer>
   <div class="ligne-balayage" aria-hidden="true"></div>
 </div>
 <script src="mission.js"></script>

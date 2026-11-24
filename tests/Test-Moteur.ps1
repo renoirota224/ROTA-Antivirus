@@ -77,6 +77,18 @@ try {
     $ep = New-Object EtatDisque; $ep.Libre = 10MB; $vp = [Moteur]::Verdict((New-Object PlanDisque), $ep, $false)
     Test-Point 'Disque plein signale' (@($vp.Bloquants | Where-Object { $_ -like 'Disque presque plein*' }).Count -eq 1)
 
+    # Tout nettoyer : PlugX, dossier cache, RECYCLER.BIN et blocage en une fois.
+    $f = "$t-f"; $cf = '\\?\' + $f + '\' + [string][char]0x00A0; [void][IO.Directory]::CreateDirectory("$cf\Jeux"); [IO.File]::WriteAllText("$cf\Jeux\notes.txt", 'garde'); [IO.File]::SetAttributes($cf, [IO.FileAttributes]'Hidden, System, Directory')
+    [void](New-Item -ItemType Directory -Path "$f\RECYCLER.BIN\1"); [void](New-Item -ItemType Directory -Path "$f\RECYCLER.BIN\DOCS"); [IO.File]::WriteAllText("$f\RECYCLER.BIN\1\CEFHelper.exe", 'faux'); [IO.File]::WriteAllText("$f\RECYCLER.BIN\1\wsc.dll", 'faux2'); [IO.File]::WriteAllText("$f\RECYCLER.BIN\DOCS\doc.bin", 'document')
+    $etapes = New-Object System.Collections.ArrayList; $suivi = [Action[Avancement]] { param($a) if ($a.Phase -like 'Étape*') { [void]$etapes.Add($a.Phase) } }
+    $rt = [Moteur]::ToutNettoyer($f, $suivi, $true, "$t-fa")
+    Test-Point 'Tout nettoyer sans arret' (@($rt.Messages | Where-Object { $_ -like 'ARR*' }).Count -eq 0 -and $rt.Echecs -eq 0)
+    Test-Point 'Tout nettoyer annonce 6 etapes' ($etapes.Count -eq 6)
+    Test-Point 'Tout nettoyer : PlugX retire et fichiers remis' (-not (Test-Path -LiteralPath "$f\RECYCLER.BIN\1\CEFHelper.exe") -and (Get-Content -LiteralPath "$f\Jeux\notes.txt") -eq 'garde')
+    $ef = [Moteur]::Etat($f); $vf = [Moteur]::Verdict([Moteur]::Analyser($f, $null, [Threading.CancellationToken]::None), $ef, $false)
+    Test-Point 'Tout nettoyer : blocage pose, plus de cache ni de PlugX' ($ef.Blocage -and $ef.DossiersCaches -eq 0 -and -not $ef.RecyclerDossier -and $vf.ATraiter -eq 0)
+    Test-Point 'Tout nettoyer : seule la quarantaine reste a sortir' ($vf.Bloquants.Count -eq 1 -and $vf.Bloquants[0] -like '*QUARANTAINE*')
+
     # Parcours complet : reparer, ranger, sortir, remettre, puis tout annuler.
     $b = "$t-b"; [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\1"); [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\DOCS")
     [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\CEFHelper.exe", 'faux'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\wsc.dll", 'faux2'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\DOCS\doc.bin", 'document')
@@ -97,6 +109,6 @@ try {
     Test-Point 'Deuxieme annulation sans effet' ($a3.Ok -eq 0 -and $a3.Echecs -eq 0)
 }
 finally {
-    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d", "$t-e") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
+    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d", "$t-e", "$t-f", "$t-fa") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
 }
 "Echecs : $echecs"; if ($echecs -gt 0) { exit 1 }

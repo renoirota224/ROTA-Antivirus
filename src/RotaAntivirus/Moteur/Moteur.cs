@@ -535,6 +535,45 @@ public static class Moteur
         return r;
     }
 
+    // Fait toutes les etapes dans le bon ordre. S'arrete et explique si une etape est impossible.
+    public static ResultatAction ToutNettoyer(string racineBrute, Action<Avancement> suivi, bool essai = false, string baseArchives = null)
+    {
+        string racine = Normaliser(racineBrute); bool systeme = !essai && EstDisqueSysteme(racine); var r = new ResultatAction(); int etape = 0, total = systeme ? 2 : 6;
+        Action<string> annonce = t => { etape++; if (suivi != null) suivi(new Avancement { Phase = "Étape " + etape + "/" + total + " : " + t }); };
+        Func<string, Func<ResultatAction>, bool> faire = (nom, travail) =>
+        {
+            try
+            {
+                var x = travail(); r.Ok += x.Ok; r.Echecs += x.Echecs;
+                r.Messages.Add(nom + " : " + x.Ok + " fichier(s)" + (x.Echecs > 0 ? ", " + x.Echecs + " échec(s)" : "") + ".");
+                r.Messages.AddRange(x.Messages.Where(m => m.StartsWith("Échec")).Take(3));
+                return true;
+            }
+            catch (Exception ex) { r.Echecs++; r.Messages.Add("ARRÊT à l'étape « " + nom + " » : " + ex.Message); return false; }
+        };
+        if (!systeme)
+        {
+            annonce("place sur le disque");
+            var e0 = Etat(racine);
+            if (e0.Quarantaine && e0.Libre < 1024L * 1024 * 1024) { if (!faire("Sortie de la quarantaine", () => SortirQuarantaine(racine, baseArchives, essai))) return r; }
+            else r.Messages.Add("Place sur le disque : suffisante.");
+        }
+        annonce("réparation des programmes");
+        var plan = Analyser(racine, null, CancellationToken.None);
+        if (!faire("Réparation", () => Appliquer(plan, racine, suivi, essai, "reparer"))) return r;
+        annonce("isolement des fichiers irréparables");
+        if (!faire("Isolement", () => Appliquer(plan, racine, suivi, essai, "isoler"))) return r;
+        if (systeme) return r;
+        annonce("fichiers cachés par PlugX");
+        if (DossiersCaches(racine).Count > 0) { if (!faire("Fichiers cachés remis", () => RemettreFichiersCaches(racine, essai))) return r; }
+        else r.Messages.Add("Fichiers cachés : aucun.");
+        annonce("dossier RECYCLER.BIN");
+        if (Directory.Exists(Path.Combine(racine, "RECYCLER.BIN"))) { if (!faire("RECYCLER.BIN rangé", () => RangerRecycler(racine, CompterRecycler(racine), essai))) return r; }
+        annonce("blocage PlugX");
+        if (!Etat(racine).Blocage) faire("Blocage PlugX", () => PoserBlocageDisque(racine, essai));
+        return r;
+    }
+
     public static bool PeutAnnuler(string racineBrute)
     {
         var bas = Path.Combine(Normaliser(racineBrute), DossierQuarantaine); if (!Directory.Exists(bas)) return false;
