@@ -89,6 +89,11 @@ try {
     Test-Point 'Tout nettoyer : blocage pose, plus de cache ni de PlugX' ($ef.Blocage -and $ef.DossiersCaches -eq 0 -and -not $ef.RecyclerDossier -and $vf.ATraiter -eq 0)
     Test-Point 'Tout nettoyer : seule la quarantaine reste a sortir' ($vf.Bloquants.Count -eq 1 -and $vf.Bloquants[0] -like '*QUARANTAINE*')
 
+    # Les nouvelles reparations ne doivent jamais toucher un programme sain.
+    $sains = @(Get-ChildItem "$env:WINDIR\System32" -Filter *.exe -File | Select-Object -First 300); $touches = 0
+    foreach ($s in $sains) { try { [byte[]]$q = [IO.File]::ReadAllBytes($s.FullName); if ($null -ne [Reparateur]::RemettreReloc($q) -or $null -ne [Reparateur]::RemettreAppelDemarrage($q) -or [Reparateur]::AppelsPendants($q, $q) -gt 0) { $touches++ } } catch { } }
+    Test-Point "Programmes Windows sains jamais modifies ($($sains.Count) testes)" ($touches -eq 0)
+
     # Parcours complet : reparer, ranger, sortir, remettre, puis tout annuler.
     $b = "$t-b"; [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\1"); [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\DOCS")
     [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\CEFHelper.exe", 'faux'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\wsc.dll", 'faux2'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\DOCS\doc.bin", 'document')

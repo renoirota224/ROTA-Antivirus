@@ -161,11 +161,12 @@ public static class Moteur
         catch { return false; }
     }
 
-    static string Probleme(byte[] o)
+    static string Probleme(byte[] o, byte[] infecte)
     {
         try
         {
             if (Reparateur.EstForme2(o)) return "forme 2 du virus encore présente";
+            if (Reparateur.AppelsPendants(o, infecte) > 0) return "un appel du programme reste détourné vers le virus disparu";
             int pe; bool x; var s = Reparateur.Sections(o, out pe, out x);
             long ep = BitConverter.ToUInt32(o, pe + 40); bool code = false;
             foreach (var q in s)
@@ -355,7 +356,7 @@ public static class Moteur
                     continue;
                 }
                 if (o == null) { if (etat.StartsWith("non repare")) brut.Add(Element("A_VERIFIER", f, racine, etat, null)); continue; }
-                var pb = Probleme(o);
+                var pb = Probleme(o, b);
                 brut.Add(pb != "" ? Element("RETELECHARGER", f, racine, pb, null) : Element("REPARER", f, racine, etat, null));
             }
             catch (OperationCanceledException) { throw; }
@@ -367,7 +368,7 @@ public static class Moteur
             try
             {
                 var bg = File.ReadAllBytes(Long(e.CheminG)); string etat; var og = Reparateur.Nettoyer(bg, out etat);
-                if (og != null) pb = Probleme(og); else if (etat.StartsWith("non repare")) pb = etat;
+                if (og != null) pb = Probleme(og, bg); else if (etat.StartsWith("non repare")) pb = etat;
                 if (pb == "" && FauxGrenam(og ?? bg)) pb = "original lui-même faux";
             }
             catch (Exception ex) { pb = ex.Message.IndexOf("virus", StringComparison.OrdinalIgnoreCase) >= 0 ? "original bloqué par l'antivirus" : "original illisible"; }
@@ -471,7 +472,7 @@ public static class Moteur
             {
                 brut = File.ReadAllBytes(Long(e.Type == "GRENAM" ? e.CheminG : e.Chemin)); string etat; o = Reparateur.Nettoyer(brut, out etat);
                 if (o == null) { if (e.Type == "GRENAM") o = brut; else throw new IOException("plus rien à corriger"); }
-                if (e.Type == "REPARER") { var pb = Probleme(o); if (pb != "") throw new IOException(pb); }
+                if (e.Type == "REPARER") { var pb = Probleme(o, brut); if (pb != "") throw new IOException(pb); }
             }
             hAvant = Empreinte(brut); hApres = Empreinte(o);
             long libre = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(e.Chemin))).AvailableFreeSpace;

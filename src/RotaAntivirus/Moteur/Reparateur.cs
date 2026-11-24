@@ -135,7 +135,7 @@ public static class Reparateur
             int pe; bool is64; var sec = Sections(f, out pe, out is64); if (sec.Count == 0) return false;
             foreach (var s in sec) if (s.Nom == "UPX0") return false;
             var u = sec[sec.Count - 1];
-            if (u.Nom != "UPX1" || (u.Ch & 0xA0000000) != 0 || u.Raw == 0 || u.Raw > 0x10000 || (long)u.Ptr + u.Raw > f.Length) return false;
+            if (u.Nom != "UPX1" || (u.Ch & 0xA0000000) != 0 || u.Raw == 0 || u.Raw > 0x1000000 || (long)u.Ptr + u.Raw > f.Length) return false;
             int dd = pe + 24 + (is64 ? 112 : 96); uint rva = BitConverter.ToUInt32(f, dd + 40), taille = BitConverter.ToUInt32(f, dd + 44), image = BitConverter.ToUInt32(f, pe + 80);
             // Le virus a pu effacer le repertoire des relocations : la table se relit alors dans la section.
             bool sansRep = rva == 0;
@@ -153,7 +153,8 @@ public static class Reparateur
             for (uint i = lu; i < u.Raw; i++) if (f[u.Ptr + i] != 0) return false;
             foreach (var s in sec)
             {
-                if (s == u || (s.Ch & 0x20000000) == 0) continue;
+                // En 64 bits, Windows interdit toujours d'executer une section non executable : un saut vers elle planterait.
+                if (is64 || s == u || (s.Ch & 0x20000000) == 0) continue;
                 long max = Math.Min((long)s.Raw, f.Length - (long)s.Ptr) - 5;
                 for (long i = 0; i < max; i++)
                 {
@@ -231,6 +232,112 @@ public static class Reparateur
         catch { return false; }
     }
 
+    // La forme UPX1 a ecrit "UPX1\0" sur le debut du nom ".reloc" : il reste "UPX1\0c". Si la section est
+    // toujours une table de relocations valide et inerte, on remet exactement le nom et le repertoire d'origine.
+    static readonly byte[] NomUpx1Reloc = { 0x55, 0x50, 0x58, 0x31, 0, 0x63, 0, 0 };
+
+    public static byte[] RemettreReloc(byte[] f)
+    {
+        if (f == null || f.Length < 4096 || f[0] != 0x4D || f[1] != 0x5A) return null;
+        try
+        {
+            int pe; bool is64; var sec = Sections(f, out pe, out is64); if (sec.Count == 0) return null;
+            var u = sec[sec.Count - 1];
+            if (!Egal(f, u.Entete, NomUpx1Reloc) || !ResteUpx1Inerte(f)) return null;
+            int dd = pe + 24 + (is64 ? 112 : 96); uint rva = BitConverter.ToUInt32(f, dd + 40), lu = 0;
+            if (rva == 0)
+            {
+                while (lu + 8 <= u.Raw)
+                {
+                    uint page = BitConverter.ToUInt32(f, (int)(u.Ptr + lu)), bloc = BitConverter.ToUInt32(f, (int)(u.Ptr + lu + 4));
+                    if (page == 0 && bloc == 0) break;
+                    lu += bloc;
+                }
+            }
+            var o = (byte[])f.Clone();
+            var nom = new byte[8]; System.Text.Encoding.ASCII.GetBytes(".reloc").CopyTo(nom, 0); nom.CopyTo(o, u.Entete);
+            BitConverter.GetBytes((uint)0x42000040).CopyTo(o, u.Entete + 36);
+            if (rva == 0 && lu > 0)
+            {
+                BitConverter.GetBytes(u.VA).CopyTo(o, dd + 40); BitConverter.GetBytes(lu).CopyTo(o, dd + 44);
+                // Taille d'origine de la section, taille de l'image et chargement a adresse variable, comme avant l'infection.
+                BitConverter.GetBytes(lu).CopyTo(o, u.Entete + 8);
+                uint al = BitConverter.ToUInt32(f, pe + 56), img = u.VA + lu; if (al > 0 && img % al != 0) img += al - img % al;
+                BitConverter.GetBytes(img).CopyTo(o, pe + 80);
+                ushort dc = BitConverter.ToUInt16(f, pe + 94); if ((dc & 0x0100) != 0) BitConverter.GetBytes((ushort)(dc | 0x0040)).CopyTo(o, pe + 94);
+            }
+            if (BitConverter.ToUInt32(f, pe + 88) != 0) BitConverter.GetBytes(Somme(o, pe + 88)).CopyTo(o, pe + 88);
+            return o;
+        }
+        catch { return null; }
+    }
+
+    // Appels du fichier repare qui sortent du programme et menaient, dans le fichier infecte, au code de la forme 2
+    // (fin de la derniere section moins 0x200, ou sa signature exacte). Un tel fichier planterait : il n'est jamais declare repare.
+    public static int AppelsPendants(byte[] f, byte[] infecte)
+    {
+        try
+        {
+            int pe, pi; bool is64, xi; var s = Sections(f, out pe, out is64); var si = Sections(infecte, out pi, out xi); var Li = si[si.Count - 1];
+            uint img = BitConverter.ToUInt32(f, pe + 80), fin = Li.VA + Li.Raw - 0x200; int n = 0;
+            foreach (var q in s)
+            {
+                if ((q.Ch & 0x20000000) == 0) continue; long max = Math.Min((long)q.Raw, f.Length - (long)q.Ptr) - 5;
+                for (long i = 0; i < max; i++)
+                {
+                    byte b = f[q.Ptr + i]; if (b != 0xE8 && b != 0xE9) continue;
+                    uint c = unchecked(q.VA + (uint)i + 5 + (uint)BitConverter.ToInt32(f, (int)(q.Ptr + i + 1)));
+                    if (c < img) continue;
+                    if (c == fin) { n++; continue; }
+                    foreach (var w in si) if (c >= w.VA && c - w.VA + 16 <= w.Raw && Egal(infecte, (int)(w.Ptr + c - w.VA), SigForme2)) { n++; break; }
+                }
+            }
+            return n;
+        }
+        catch { return 0; }
+    }
+
+    // Fonction de securite standard de Visual C++, reconnue a sa constante : BB40E64E (32 bits) ou 2B992DDFA232 (64 bits).
+    static List<uint> FonctionsSecurite(byte[] f, List<SectionPe> s, bool is64)
+    {
+        var r = new List<uint>(); byte[] m = is64 ? new byte[] { 0x32, 0xA2, 0xDF, 0x2D, 0x99, 0x2B, 0, 0 } : new byte[] { 0x4E, 0xE6, 0x40, 0xBB };
+        foreach (var q in s)
+        {
+            if ((q.Ch & 0x20000000) == 0) continue; long max = Math.Min((long)q.Raw, f.Length - (long)q.Ptr) - m.Length;
+            for (long i = 0; i < max; i++)
+            {
+                if (!Egal(f, (int)(q.Ptr + i), m)) continue;
+                long j = i; while (j > 0 && i - j < 96) { byte p = f[q.Ptr + j - 1]; if (p == 0xCC || p == 0x90 || p == 0xC3) break; j--; }
+                uint debut = q.VA + (uint)j; if (!r.Contains(debut)) r.Add(debut);
+            }
+        }
+        return r;
+    }
+
+    // La forme 2 detourne souvent l'appel du demarrage Visual C++ vers son code. Si cet appel pointe hors du
+    // programme et qu'une seule fonction de securite existe, l'appel d'origine est certain : on le remet.
+    public static byte[] RemettreAppelDemarrage(byte[] f)
+    {
+        try
+        {
+            int pe; bool is64; var s = Sections(f, out pe, out is64); uint ep = BitConverter.ToUInt32(f, pe + 40), img = BitConverter.ToUInt32(f, pe + 80);
+            SectionPe t = null; foreach (var q in s) if (ep >= q.VA && ep < q.VA + q.Raw && (q.Ch & 0x20000000) != 0) t = q;
+            if (t == null) return null;
+            int off = (int)(t.Ptr + ep - t.VA), site = -1;
+            if (!is64 && off + 10 <= f.Length && f[off] == 0xE8 && f[off + 5] == 0xE9) site = off;
+            if (is64 && off + 14 <= f.Length && Egal(f, off, new byte[] { 0x48, 0x83, 0xEC, 0x28, 0xE8 }) && Egal(f, off + 9, new byte[] { 0x48, 0x83, 0xC4, 0x28, 0xE9 })) site = off + 4;
+            if (site < 0) return null;
+            uint rvaSite = t.VA + (uint)(site - t.Ptr), cible = unchecked(rvaSite + 5 + (uint)BitConverter.ToInt32(f, site + 1));
+            if (cible < img) return null;
+            var c = FonctionsSecurite(f, s, is64); if (c.Count != 1) return null;
+            var o = (byte[])f.Clone();
+            BitConverter.GetBytes(unchecked((int)(c[0] - (rvaSite + 5)))).CopyTo(o, site + 1);
+            if (BitConverter.ToUInt32(f, pe + 88) != 0) BitConverter.GetBytes(Somme(o, pe + 88)).CopyTo(o, pe + 88);
+            return o;
+        }
+        catch { return null; }
+    }
+
     // Le ver renomme la section de ressources en UPX1 et la rend executable : on remet .rsrc.
     public static byte[] RemettreRessources(byte[] f)
     {
@@ -261,8 +368,12 @@ public static class Reparateur
         }
         if (EstForme2(courant)) { etat = "non repare : forme 2, donnees ecrasees par le virus"; return null; }
         var u = RemettreRessources(courant); bool res = u != null; if (res) courant = u;
-        if (expiro == 0 && !res) return null;
-        etat = (expiro > 0 ? "Expiro retire" : "") + (expiro > 0 && res ? " + " : "") + (res ? "ressources remises" : "");
+        var rl = RemettreReloc(courant); bool rel = rl != null; if (rel) courant = rl;
+        var ad = RemettreAppelDemarrage(courant); bool app = ad != null; if (app) courant = ad;
+        if (expiro == 0 && !res && !rel && !app) return null;
+        var parts = new List<string>();
+        if (expiro > 0) parts.Add("Expiro retire"); if (res) parts.Add("ressources remises"); if (rel) parts.Add("nom .reloc remis"); if (app) parts.Add("appel de demarrage remis");
+        etat = string.Join(" + ", parts.ToArray());
         return courant;
     }
 
