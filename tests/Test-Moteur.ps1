@@ -109,7 +109,8 @@ try {
 
     # Windows Defender : lecture des resultats et classement.
     $pdf = New-Object PlanDisque; $dl = New-Object 'System.Collections.Generic.List[DetectionDefender]'
-    foreach ($x in @(@('Virus:Win32/Expiro.EB!MTB', "$g2\a.exe"), @('HackTool:Win32/Crack', "$g2\crack.exe"), @('Trojan:Win32/Test', "$g2\pack.zip->x.exe"), @('Virus:Win32/X', "$g2\_QUARANTAINE_ROTA\y.exe"))) { $dd = New-Object DetectionDefender; $dd.Menace = $x[0]; $dd.Fichier = $x[1]; $dl.Add($dd) }
+    $g2c = try { (New-Object -ComObject Scripting.FileSystemObject).GetFolder($g2).ShortPath } catch { $g2 }
+    foreach ($x in @(@('Virus:Win32/Expiro.EB!MTB', "$g2c\a.exe"), @('HackTool:Win32/Crack', "$g2\crack.exe"), @('Trojan:Win32/Test', "$g2\pack.zip->x.exe"), @('Virus:Win32/X', "$g2\_QUARANTAINE_ROTA\y.exe"))) { $dd = New-Object DetectionDefender; $dd.Menace = $x[0]; $dd.Fichier = $x[1]; $dl.Add($dd) }
     $na = [Moteur]::FusionnerDefender($pdf, $g2, $dl)
     $ty = @{}; foreach ($e in $pdf.Elements) { $ty[$e.Relatif] = $e.Type }
     Test-Point 'Defender : virus isole, crack a verifier, archive a verifier, quarantaine ignoree' ($na -eq 3 -and $ty['a.exe'] -eq 'ISOLER' -and $ty['crack.exe'] -eq 'A_VERIFIER' -and $ty['pack.zip'] -eq 'A_VERIFIER')

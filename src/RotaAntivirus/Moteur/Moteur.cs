@@ -582,6 +582,24 @@ public static class Moteur
         return r;
     }
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern uint GetLongPathNameW(string court, StringBuilder longue, uint taille);
+
+    // Developpe un chemin abrege (ex. RUNNER~1) ; si le fichier n'existe plus, developpe au moins son dossier.
+    static string NomLong(string p)
+    {
+        try
+        {
+            p = Path.GetFullPath(p); if (p.IndexOf('~') < 0) return p;
+            var sb = new StringBuilder(32768);
+            if (GetLongPathNameW(p, sb, (uint)sb.Capacity) > 0) return sb.ToString();
+            var dossier = Path.GetDirectoryName(p);
+            if (dossier != null && GetLongPathNameW(dossier, sb, (uint)sb.Capacity) > 0) return Path.Combine(sb.ToString(), Path.GetFileName(p));
+        }
+        catch { }
+        return p;
+    }
+
     static bool MenaceLegere(string menace)
     {
         int i = menace.IndexOf(':'); var famille = i > 0 ? menace.Substring(0, i) : menace;
@@ -595,6 +613,8 @@ public static class Moteur
         foreach (var d in detections)
         {
             int fl = d.Fichier.IndexOf("->"); bool archive = fl >= 0; var p = archive ? d.Fichier.Substring(0, fl) : d.Fichier;
+            // Meme forme de chemin que la racine (un nom court comme RUNNER~1 devient son nom long).
+            p = NomLong(p);
             if (!p.StartsWith(racine, StringComparison.OrdinalIgnoreCase) || p.IndexOf("\\" + DossierQuarantaine + "\\", StringComparison.OrdinalIgnoreCase) >= 0) continue;
             bool legere = MenaceLegere(d.Menace); var note = "Windows Defender : " + d.Menace;
             ElementPlan e;
