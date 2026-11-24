@@ -2,15 +2,37 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const hote = window.chrome && window.chrome.webview;
-  const envoyer = (cmd) => { if (hote) hote.postMessage({ cmd: cmd, disque: etat.disque }); };
-  const etat = { disques: [], disque: '', occupe: false, resultat: null };
-  const ecrans = ['ecranAccueil', 'ecranAnalyse', 'ecranResultat'];
+  const etat = { disques: [], disque: '', occupe: false, resultat: null, vue: 'controle', ecranControle: 'ecranAccueil', filtre: 'tous', recherche: '' };
+  const envoyer = (cmd, valeur) => { if (hote) hote.postMessage({ cmd: cmd, disque: etat.disque, valeur: valeur === undefined ? '' : String(valeur) }); };
+  const ecrans = ['ecranAccueil', 'ecranAnalyse', 'ecranResultat', 'ecranQuarantaine', 'ecranHistorique', 'ecranAide'];
+  const FILTRES = [['tous', 'Tous'], ['traiter', 'À traiter'], ['verifier', 'À vérifier'], ['inerte', 'Inertes']];
+  const TRAITER = ['REPARER', 'REMPLACER', 'GRENAM', 'ISOLER', 'RETELECHARGER'];
+  let minuteur = null;
 
   function montrer(id) { ecrans.forEach((e) => { $(e).hidden = e !== id; }); }
   function ambiance(c) { $('app').className = 'app' + (c ? ' ' + c : ''); }
   function coeur(haut, valeur, bas) { $('coeurHaut').textContent = haut; $('coeurValeur').textContent = valeur; $('coeurBas').textContent = bas; }
   function nomDisque() { const d = etat.disques.find((x) => x.racine === etat.disque); return d ? d.nom : '--'; }
-  function occuper(v) { etat.occupe = v; document.querySelectorAll('.disque').forEach((b) => { b.disabled = v; }); }
+  function nombre(n) { return Number(n).toLocaleString('fr-FR'); }
+  function bouton(texte, classe, action, aide) { const b = document.createElement('button'); b.className = classe; b.textContent = texte; if (aide) b.setAttribute('aria-label', aide); b.addEventListener('click', action); return b; }
+  function notifier(t) { $('notif').textContent = t; clearTimeout(minuteur); minuteur = setTimeout(() => { $('notif').textContent = ''; }, 3000); }
+
+  function occuper(v) {
+    etat.occupe = v;
+    document.querySelectorAll('.disque').forEach((b) => { b.disabled = v; });
+    document.querySelectorAll('.onglet').forEach((b) => { b.disabled = v; });
+  }
+
+  function choisirVue(v) {
+    etat.vue = v;
+    document.querySelectorAll('.onglet').forEach((b) => { const a = b.dataset.vue === v; b.classList.toggle('actif', a); if (a) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    if (v === 'controle') montrer(etat.ecranControle);
+    if (v === 'quarantaine') { $('nomDisqueQ').textContent = nomDisque(); montrer('ecranQuarantaine'); envoyer('quarantaine'); }
+    if (v === 'historique') { montrer('ecranHistorique'); envoyer('historique'); }
+    if (v === 'aide') montrer('ecranAide');
+  }
+
+  function controle(id) { etat.ecranControle = id; if (etat.vue !== 'controle') choisirVue('controle'); else montrer(id); }
 
   function dessinerDisques() {
     const zone = $('disques'); zone.replaceChildren();
@@ -19,79 +41,138 @@
       b.className = 'disque' + (d.racine === etat.disque ? ' actif' : '');
       b.textContent = d.nom; b.title = d.label + ' (' + d.go + ' Go)' + (d.systeme ? ' - Windows' : '');
       b.setAttribute('aria-pressed', d.racine === etat.disque ? 'true' : 'false'); b.disabled = etat.occupe;
-      b.addEventListener('click', () => { etat.disque = d.racine; etat.resultat = null; dessinerDisques(); accueil(); });
+      b.addEventListener('click', () => { etat.disque = d.racine; etat.resultat = null; dessinerDisques(); accueil(); if (etat.vue === 'quarantaine') choisirVue('quarantaine'); });
       zone.appendChild(b);
     });
   }
 
   function accueil() {
     ambiance(''); $('noyau').className = 'noyau'; coeur('SYSTÈME', nomDisque(), 'En attente');
-    $('nomDisque').textContent = nomDisque(); $('bLancer').disabled = !etat.disque; montrer('ecranAccueil');
+    $('nomDisque').textContent = nomDisque(); $('bLancer').disabled = !etat.disque; $('infos').textContent = "Aucun programme du disque n'est lancé";
+    etat.ecranControle = 'ecranAccueil'; if (etat.vue === 'controle') montrer('ecranAccueil');
   }
 
   function debutTravail(titre) {
     occuper(true); ambiance(''); $('noyau').className = 'noyau scan'; $('titreAnalyse').textContent = titre;
     $('piste').classList.add('indetermine'); $('jauge').style.width = '0'; $('lus').textContent = '0'; $('trouves').textContent = '0'; $('courant').textContent = '';
-    coeur('EN COURS', '...', 'Préparation'); montrer('ecranAnalyse');
+    coeur('EN COURS', '...', 'Préparation'); controle('ecranAnalyse');
   }
 
   function avancement(m) {
     const pct = m.total > 0 ? Math.min(100, Math.floor(100 * m.fait / m.total)) : 0;
     $('piste').classList.toggle('indetermine', m.total === 0); $('jauge').style.width = pct + '%'; $('piste').setAttribute('aria-valuenow', String(pct));
-    $('lus').textContent = Number(m.fait).toLocaleString('fr-FR'); $('trouves').textContent = String(m.trouves); $('courant').textContent = m.courant || m.phase;
+    $('lus').textContent = nombre(m.fait); $('trouves').textContent = String(m.trouves); $('courant').textContent = m.courant || m.phase;
     coeur(m.phase.toUpperCase(), m.total > 0 ? pct + '%' : '...', m.total > 0 ? m.fait + ' / ' + m.total : 'Préparation');
   }
 
-  function ligne(e) {
+  function ligneFichier(e, i) {
     const l = document.createElement('div'); l.className = 'ligne' + (e.type === 'RESTE' ? ' discret' : '');
+    if (i < 12) l.style.animationDelay = (i * 30) + 'ms'; else l.style.animation = 'none';
     const g = document.createElement('div'); const f = document.createElement('div'); f.className = 'fichier mono'; f.textContent = e.relatif;
     const d = document.createElement('div'); d.className = 'detail'; d.textContent = e.detail; g.append(f, d);
-    const s = document.createElement('span'); s.className = 'etat'; s.textContent = e.libelle; l.append(g, s); return l;
+    const dr = document.createElement('div'); dr.className = 'droite';
+    const s = document.createElement('span'); s.className = 'etat'; s.textContent = e.libelle;
+    const m = document.createElement('div'); m.className = 'mini-actions';
+    m.append(bouton('Emplacement', 'mini', () => envoyer('emplacement', e.index), 'Montrer ' + e.relatif + ' dans l’Explorateur'), bouton('Copier', 'mini', () => envoyer('copier', e.index), 'Copier le chemin de ' + e.relatif));
+    dr.append(s, m); l.append(g, dr); return l;
+  }
+
+  function garder(e) {
+    const q = etat.recherche.toLowerCase();
+    if (q && !e.relatif.toLowerCase().includes(q)) return false;
+    if (etat.filtre === 'traiter') return TRAITER.includes(e.type);
+    if (etat.filtre === 'verifier') return e.type === 'A_VERIFIER';
+    if (etat.filtre === 'inerte') return e.type === 'RESTE';
+    return true;
+  }
+
+  function dessinerListe() {
+    const m = etat.resultat; if (!m) return;
+    const z = $('filtres'); z.replaceChildren();
+    const compte = { tous: m.elements.length, traiter: m.elements.filter((x) => TRAITER.includes(x.type)).length, verifier: m.elements.filter((x) => x.type === 'A_VERIFIER').length, inerte: m.elements.filter((x) => x.type === 'RESTE').length };
+    FILTRES.forEach(([id, nom]) => { const b = bouton(nom + ' (' + compte[id] + ')', 'filtre' + (etat.filtre === id ? ' actif' : ''), () => { etat.filtre = id; dessinerListe(); }); b.setAttribute('aria-pressed', etat.filtre === id ? 'true' : 'false'); z.appendChild(b); });
+    const zone = $('liste'); zone.replaceChildren(); const vus = m.elements.filter(garder);
+    vus.forEach((e, i) => zone.appendChild(ligneFichier(e, i)));
+    if (vus.length === 0) { const v = document.createElement('div'); v.className = 'vide'; v.textContent = 'Aucun fichier pour ce filtre.'; zone.appendChild(v); }
   }
 
   function resultat(m) {
-    occuper(false); etat.resultat = m; const pret = m.niveau === 'PRET';
+    occuper(false); etat.resultat = m; etat.filtre = 'tous'; etat.recherche = ''; $('recherche').value = ''; const pret = m.niveau === 'PRET';
     ambiance(pret ? 'ok' : 'alerte'); $('noyau').className = 'noyau';
     coeur(pret ? 'CONTRÔLE' : 'ALERTE', pret ? 'OK' : String(m.bloquants.length), pret ? 'Aucun problème connu' : 'point(s) à régler');
     $('titreResultat').textContent = m.titre; $('message').hidden = !m.message; $('message').textContent = m.message || '';
     const pts = $('points'); pts.replaceChildren();
     (pret ? m.reserves : m.bloquants).forEach((t) => { const li = document.createElement('li'); li.textContent = t; pts.appendChild(li); });
-    const zone = $('liste'); zone.replaceChildren(); zone.hidden = m.elements.length === 0;
-    m.elements.forEach((e, i) => { const l = ligne(e); if (i < 12) l.style.animationDelay = (i * 35) + 'ms'; else l.style.animation = 'none'; zone.appendChild(l); });
-    $('bReparer').hidden = m.systeme || m.aTraiter === 0; $('bRanger').hidden = m.systeme || !m.recycler; $('bAnnuler').hidden = m.systeme;
-    $('infos').textContent = Number(m.total).toLocaleString('fr-FR') + ' fichiers, ' + Number(m.examines).toLocaleString('fr-FR') + ' examinés' + (m.tronque ? ', ' + m.nbElements + ' à voir dans le rapport' : '');
-    montrer('ecranResultat');
+    const aListe = m.elements.length > 0; $('outilsListe').hidden = !aListe; $('liste').hidden = !aListe; dessinerListe();
+    const ext = !m.systeme;
+    $('bReparer').hidden = !(ext && m.aTraiter > 0);
+    $('bRanger').hidden = !(ext && m.recycler);
+    $('bBlocage').hidden = !(ext && !m.recycler && !m.blocage);
+    $('bSortir').hidden = !(ext && m.quarantaine && m.aTraiter === 0 && !m.recycler);
+    $('bRemettre').hidden = !(ext && m.archive && !m.quarantaine);
+    $('bAnnuler').hidden = !(ext && m.quarantaine);
+    $('bRapport').hidden = false; $('bNouvelle').hidden = false;
+    $('infos').textContent = nombre(m.total) + ' fichiers, ' + nombre(m.examines) + ' examinés' + (m.tronque ? ', ' + m.nbElements + ' à voir dans le rapport' : '');
+    controle('ecranResultat');
   }
 
   function erreur(t) {
-    occuper(false); ambiance('alerte'); $('noyau').className = 'noyau'; coeur('ERREUR', '!', 'Opération arrêtée');
+    occuper(false); etat.resultat = null; ambiance('alerte'); $('noyau').className = 'noyau'; coeur('ERREUR', '!', 'Opération arrêtée');
     $('titreResultat').textContent = 'Opération impossible'; $('message').hidden = false; $('message').textContent = t;
-    $('points').replaceChildren(); $('liste').replaceChildren(); $('liste').hidden = true;
-    ['bReparer', 'bRanger', 'bAnnuler'].forEach((b) => { $(b).hidden = true; }); montrer('ecranResultat');
+    $('points').replaceChildren(); $('liste').replaceChildren(); $('liste').hidden = true; $('outilsListe').hidden = true;
+    ['bReparer', 'bRanger', 'bBlocage', 'bSortir', 'bRemettre', 'bAnnuler', 'bRapport'].forEach((b) => { $(b).hidden = true; }); $('bNouvelle').hidden = false;
+    controle('ecranResultat');
+  }
+
+  function ligneSimple(titre, detail, droite, classe) {
+    const l = document.createElement('div'); l.className = 'ligne ' + (classe || 'neutre'); l.style.animation = 'none';
+    const g = document.createElement('div'); const f = document.createElement('div'); f.className = 'fichier mono'; f.textContent = titre;
+    const d = document.createElement('div'); d.className = 'detail'; d.textContent = detail; g.append(f, d); l.appendChild(g);
+    if (droite) l.appendChild(droite); return l;
+  }
+
+  function quarantaine(m) {
+    if (m.disque !== etat.disque) return;
+    const z = $('listeQuarantaine'); z.replaceChildren();
+    const total = m.sessions.reduce((a, s) => a + s.fichiers, 0);
+    $('texteQuarantaine').textContent = m.sessions.length ? total + ' fichier(s) gardés sur ce disque. Ils sont inactifs, mais ce dossier ne doit jamais partir chez un client.' : (m.archive ? 'Rien sur ce disque. Une archive de sa quarantaine est gardée sur ce PC.' : 'Aucune quarantaine sur ce disque.');
+    m.sessions.forEach((s) => { const e = document.createElement('span'); e.className = 'etat'; e.textContent = s.fichiers + ' fichier(s), ' + s.mo + ' Mo'; z.appendChild(ligneSimple(s.genre, s.date + ' • ' + s.nom, e)); });
+    z.hidden = m.sessions.length === 0;
+  }
+
+  function historique(m) {
+    const z = $('listeHistorique'); z.replaceChildren();
+    if (!m.rapports.length) { const v = document.createElement('div'); v.className = 'vide'; v.textContent = 'Aucun contrôle enregistré.'; z.appendChild(v); return; }
+    m.rapports.forEach((r) => {
+      const dr = document.createElement('div'); dr.className = 'droite';
+      const e = document.createElement('span'); e.className = 'etat'; e.textContent = r.verdict.startsWith('Prêt') ? 'Prêt' : (r.verdict.startsWith('Aucun') ? 'Aucun problème' : 'À régler');
+      dr.append(e, bouton('Ouvrir', 'mini', () => envoyer('ouvrirRapport', r.nom), 'Ouvrir le rapport du ' + r.date));
+      z.appendChild(ligneSimple((r.disque || 'Disque') + '  ' + r.date, r.verdict, dr, e.textContent === 'À régler' ? '' : 'ok-ligne'));
+    });
   }
 
   function recevoir(m) {
     switch (m.type) {
       case 'disques':
         etat.disques = m.disques;
-        if (!etat.disques.some((d) => d.racine === etat.disque)) { const x = etat.disques.find((d) => !d.systeme) || etat.disques[0]; etat.disque = x ? x.racine : ''; }
-        dessinerDisques(); if (!etat.occupe && !etat.resultat) accueil(); break;
-      case 'debut': debutTravail('Analyse en cours'); break;
+        if (!etat.disques.some((d) => d.racine === etat.disque)) { const x = etat.disques.find((d) => !d.systeme) || etat.disques[0]; etat.disque = x ? x.racine : ''; etat.resultat = null; if (!etat.occupe) accueil(); }
+        dessinerDisques(); if (!etat.occupe && !etat.resultat && etat.ecranControle === 'ecranAccueil') accueil(); break;
+      case 'debut': $('bArreter').hidden = false; debutTravail('Analyse en cours'); break;
       case 'action': debutTravail(m.titre); $('bArreter').hidden = true; break;
       case 'avancement': avancement(m); break;
       case 'resultat': $('bArreter').hidden = false; resultat(m); break;
       case 'arrete': $('bArreter').hidden = false; occuper(false); accueil(); break;
       case 'erreur': $('bArreter').hidden = false; erreur(m.message); break;
+      case 'quarantaine': quarantaine(m); break;
+      case 'historique': historique(m); break;
+      case 'info': notifier(m.message); break;
     }
   }
 
-  $('bLancer').addEventListener('click', () => envoyer('analyser'));
-  $('bNouvelle').addEventListener('click', () => envoyer('analyser'));
-  $('bArreter').addEventListener('click', () => envoyer('arreter'));
-  $('bReparer').addEventListener('click', () => envoyer('reparer'));
-  $('bRanger').addEventListener('click', () => envoyer('ranger'));
-  $('bAnnuler').addEventListener('click', () => envoyer('annuler'));
-  $('bRapport').addEventListener('click', () => envoyer('rapport'));
+  document.querySelectorAll('.onglet').forEach((b) => b.addEventListener('click', () => choisirVue(b.dataset.vue)));
+  [['bLancer', 'analyser'], ['bNouvelle', 'analyser'], ['bArreter', 'arreter'], ['bReparer', 'reparer'], ['bRanger', 'ranger'], ['bBlocage', 'blocage'], ['bSortir', 'sortir'], ['bRemettre', 'remettre'], ['bAnnuler', 'annuler'], ['bRapport', 'rapport'], ['bActuQ', 'quarantaine'], ['bDossierRapports', 'dossierRapports']].forEach(([id, cmd]) => $(id).addEventListener('click', () => envoyer(cmd)));
+  $('bVersControle').addEventListener('click', () => choisirVue('controle'));
+  $('recherche').addEventListener('input', (e) => { etat.recherche = e.target.value; dessinerListe(); });
   if (hote) { hote.addEventListener('message', (e) => recevoir(e.data)); envoyer('pret'); }
   window.addEventListener('focus', () => { if (!etat.occupe) envoyer('pret'); });
 })();

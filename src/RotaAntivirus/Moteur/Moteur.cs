@@ -25,6 +25,7 @@ public class Avancement { public int Fait, Total, Trouves; public string Courant
 public class EtatDisque { public bool RecyclerDossier, Blocage, Quarantaine; }
 public class VerdictDisque { public string Niveau = "", Titre = ""; public List<string> Bloquants = new List<string>(), Reserves = new List<string>(); public int ATraiter; }
 public class ResultatAction { public int Ok, Echecs; public string Session = ""; public List<string> Messages = new List<string>(); }
+public class InfoQuarantaine { public string Nom = "", Genre = "", Date = ""; public int Fichiers; public long Octets; }
 
 public static class Moteur
 {
@@ -470,6 +471,88 @@ public static class Moteur
             catch (Exception ex) { r.Echecs++; r.Messages.Add("Échec : " + c[2] + " : " + ex.Message); }
         }
         return r;
+    }
+
+    // ---------- Quarantaine et blocage ----------
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool GetVolumeInformationW(string racine, StringBuilder nom, int tailleNom, out uint serie, out uint maxComposant, out uint options, StringBuilder systeme, int tailleSysteme);
+
+    static string SerieDisque(string racine)
+    {
+        uint s, a, b; return GetVolumeInformationW(Path.GetPathRoot(Normaliser(racine)), null, 0, out s, out a, out b, null, 0) ? s.ToString("X8") : "INCONNU";
+    }
+
+    static string DossierArchives() { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RotaAntivirus", "Archives"); }
+
+    public static ResultatAction PoserBlocageDisque(string racineBrute, bool essai = false)
+    {
+        string racine = Normaliser(racineBrute); Refuser(racine, essai); var r = new ResultatAction(); PoserBlocage(racine, r); return r;
+    }
+
+    public static List<InfoQuarantaine> ListerQuarantaine(string racineBrute)
+    {
+        var l = new List<InfoQuarantaine>(); var bas = Path.Combine(Normaliser(racineBrute), DossierQuarantaine);
+        if (!Directory.Exists(bas)) return l;
+        foreach (var d in Directory.GetDirectories(bas).OrderByDescending(x => x, StringComparer.Ordinal))
+        {
+            var n = Path.GetFileName(d); var q = new InfoQuarantaine { Nom = n, Date = Directory.GetLastWriteTime(d).ToString("dd/MM/yyyy HH:mm") };
+            q.Genre = n.StartsWith("recycler") ? "Documents RECYCLER.BIN" : n.StartsWith("demarrage") ? "Réparation au démarrage" : "Fichiers isolés";
+            try { foreach (var f in Directory.GetFiles(Long(d), "*", SearchOption.AllDirectories)) { q.Fichiers++; q.Octets += new FileInfo(f).Length; } } catch { }
+            l.Add(q);
+        }
+        return l;
+    }
+
+    static int CopierVerifie(string source, string cible)
+    {
+        var s = Court(source).TrimEnd('\\'); int n = 0;
+        foreach (var f in Directory.GetFiles(Long(s), "*", SearchOption.AllDirectories).Select(Court))
+        {
+            var c = Path.Combine(cible, f.Substring(s.Length + 1)); Directory.CreateDirectory(Long(Path.GetDirectoryName(c)));
+            File.Copy(Long(f), Long(c), false); File.SetAttributes(Long(c), FileAttributes.Normal);
+            if (EmpreinteFichier(f) != EmpreinteFichier(c)) throw new IOException("copie différente : " + Path.GetFileName(f));
+            n++;
+        }
+        return n;
+    }
+
+    static void RetirerDossier(string d)
+    {
+        foreach (var x in Directory.GetFileSystemEntries(Long(d), "*", SearchOption.AllDirectories)) { try { File.SetAttributes(x, FileAttributes.Normal); } catch { } }
+        try { File.SetAttributes(Long(d), FileAttributes.Directory); } catch { }
+        Directory.Delete(Long(d), true);
+    }
+
+    public static bool ArchiveExiste(string racineBrute, string baseArchives = null)
+    {
+        var b = baseArchives ?? DossierArchives(); return Directory.Exists(b) && Directory.GetDirectories(b, SerieDisque(racineBrute) + "-*").Length > 0;
+    }
+
+    // Copie la quarantaine sur le PC, verifie chaque fichier, puis seulement la retire du disque.
+    public static ResultatAction SortirQuarantaine(string racineBrute, string baseArchives = null, bool essai = false)
+    {
+        string racine = Normaliser(racineBrute), src = Path.Combine(racine, DossierQuarantaine), b = baseArchives ?? DossierArchives(); var r = new ResultatAction();
+        if (!essai && EstDisqueSysteme(racine)) throw new InvalidOperationException("Cette action ne travaille que sur un disque externe.");
+        if (!Directory.Exists(src)) { r.Messages.Add("Aucune quarantaine sur ce disque."); return r; }
+        if (!essai && string.Equals(Path.GetPathRoot(b), Path.GetPathRoot(racine), StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("L'archive doit être sur un autre disque.");
+        long total = Directory.GetFiles(Long(src), "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length);
+        if (new DriveInfo(Path.GetPathRoot(Path.GetFullPath(b))).AvailableFreeSpace < total + 100L * 1024 * 1024) throw new IOException("Pas assez de place sur le PC : rien n'a été retiré du disque.");
+        var archive = Path.Combine(b, SerieDisque(racine) + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss")); var dst = Path.Combine(archive, DossierQuarantaine);
+        try { Directory.CreateDirectory(dst); r.Ok = CopierVerifie(src, dst); }
+        catch (Exception ex) { try { if (Directory.Exists(archive)) RetirerDossier(archive); } catch { } throw new IOException("Copie impossible, rien n'a été retiré du disque : " + ex.Message); }
+        RetirerDossier(src); r.Session = archive; r.Messages.Add("Quarantaine gardée sur le PC."); return r;
+    }
+
+    public static ResultatAction RemettreQuarantaine(string racineBrute, string baseArchives = null, bool essai = false)
+    {
+        string racine = Normaliser(racineBrute), dst = Path.Combine(racine, DossierQuarantaine), b = baseArchives ?? DossierArchives(); var r = new ResultatAction();
+        if (!essai && EstDisqueSysteme(racine)) throw new InvalidOperationException("Cette action ne travaille que sur un disque externe.");
+        if (Directory.Exists(dst)) throw new InvalidOperationException("Une quarantaine existe déjà sur ce disque.");
+        var archive = Directory.Exists(b) ? Directory.GetDirectories(b, SerieDisque(racine) + "-*").OrderByDescending(x => x, StringComparer.Ordinal).FirstOrDefault() : null;
+        if (archive == null) { r.Messages.Add("Aucune archive pour ce disque."); return r; }
+        try { r.Ok = CopierVerifie(Path.Combine(archive, DossierQuarantaine), dst); }
+        catch (Exception ex) { try { if (Directory.Exists(dst)) RetirerDossier(dst); } catch { } throw new IOException("Copie impossible, l'archive reste sur le PC : " + ex.Message); }
+        RetirerDossier(archive); r.Session = dst; r.Messages.Add("Quarantaine remise sur le disque."); return r;
     }
 
     static List<string> Inventaire(string dossier)

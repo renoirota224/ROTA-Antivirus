@@ -61,6 +61,32 @@ p{margin:0;font-size:16px;line-height:1.55;color:#D0DDEB}
 .ligne .etat{flex:none;max-width:42%;text-align:right;font-size:12.5px;font-weight:600;color:#FFA94D}.ligne.discret .etat{color:#C6D5E5}
 .actions{display:flex;flex-wrap:wrap;gap:9px}
 .pied{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:12px;color:#B6C6D8}
+.logo{display:block;height:30px;width:auto}
+.produit{padding:4px 8px;border:1px solid rgba(255,145,77,.6);border-radius:4px;color:#FFB07A;font-size:11px;letter-spacing:.16em}
+.onglets{display:flex;flex-wrap:wrap;gap:4px;padding:4px;border:1px solid rgba(190,220,250,.18);border-radius:8px;background:rgba(13,21,34,.7)}
+.onglet{min-height:40px;padding:0 15px;border:0;border-radius:5px;background:transparent;color:#C6D5E5;font:600 14px "Bahnschrift","Segoe UI",system-ui,sans-serif;cursor:pointer;transition:background .2s,color .2s}
+.onglet:hover{color:#fff}.onglet.actif{background:rgba(190,220,250,.14);color:var(--c)}
+.onglet:focus-visible,.recherche:focus-visible,.filtre:focus-visible,.mini:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.outils-liste{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.filtres{display:flex;flex-wrap:wrap;gap:5px}
+.filtre{min-height:34px;padding:0 10px;border:1px solid rgba(190,220,250,.28);border-radius:5px;background:transparent;color:#D0DDEB;font:600 12px "Bahnschrift","Segoe UI",system-ui,sans-serif;cursor:pointer}
+.filtre.actif{border-color:var(--c);color:var(--c)}
+.recherche{flex:1 1 150px;max-width:220px;min-height:34px;padding:0 10px;border:1px solid rgba(190,220,250,.28);border-radius:5px;background:rgba(6,10,18,.75);color:#EEF4FF;font:13px "Segoe UI",system-ui,sans-serif}
+.recherche::placeholder{color:#A8B8CA}
+.ligne .droite{flex:none;max-width:44%;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.ligne .droite .etat{max-width:none}
+.mini-actions{display:flex;gap:4px}
+.mini{min-height:28px;padding:0 7px;border:1px solid rgba(190,220,250,.28);border-radius:4px;background:transparent;color:#D9E6F5;font:600 11.5px "Segoe UI",system-ui,sans-serif;cursor:pointer}
+.mini:hover{border-color:#fff}
+.ligne.neutre{border-color:rgba(190,220,250,.22)}
+.ligne.neutre .etat{color:#C6D5E5}
+.ligne.ok-ligne{border-color:rgba(98,245,181,.4)}.ligne.ok-ligne .etat{color:#62F5B5}
+.liste.grande{max-height:calc(100vh - 300px)}
+.vide{font-size:14px;color:#C6D5E5;padding:8px 2px}
+.secondaires{gap:2px}.secondaires .btn{min-height:34px;font-size:13px}
+.etapes{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:9px;font-size:15px;line-height:1.45;color:#D9E6F5}
+.etapes strong{color:#fff}.note{font-size:13.5px;padding:10px 12px;border:1px solid rgba(190,220,250,.24);border-radius:6px}
+#notif{color:#62F5B5}
 @keyframes tourne{to{transform:rotate(360deg)}}
 @keyframes derive{to{transform:translate(44px,44px)}}
 @keyframes respire{50%{transform:scale(1.08);opacity:.72}}

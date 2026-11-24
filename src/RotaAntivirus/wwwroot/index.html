@@ -13,9 +13,15 @@
   <div class="halo" aria-hidden="true"></div>
   <header class="dessus entete">
     <div class="marque">
-      <svg width="38" height="38" viewBox="0 0 38 38" fill="none" aria-hidden="true"><path class="trait" d="M19 2 34 8v11c0 9-6 14-15 17C10 33 4 28 4 19V8Z" stroke-width="2"/><path d="M13 27V12h7a4.5 4.5 0 0 1 1 8.9L26 27M13 20h8" stroke="#EEF4FF" stroke-width="2"/></svg>
-      <div><div class="nom">ROTA ANTIVIRUS</div><div class="mono sous">Contrôle des disques RotaGaming</div></div>
+      <img class="logo" src="logo.png" alt="RotaGaming">
+      <div class="produit mono">ANTIVIRUS</div>
     </div>
+    <nav class="onglets" aria-label="Sections">
+      <button class="onglet actif" data-vue="controle">Contrôle</button>
+      <button class="onglet" data-vue="quarantaine">Quarantaine</button>
+      <button class="onglet" data-vue="historique">Historique</button>
+      <button class="onglet" data-vue="aide">Aide</button>
+    </nav>
     <div class="choix"><span class="mono sous">DISQUE</span><div id="disques" class="choix" role="group" aria-label="Choix du disque"></div></div>
   </header>
 
@@ -37,7 +43,7 @@
     <section class="vitre panneau" aria-live="polite">
       <div id="ecranAccueil" class="ecran">
         <h1>Prêt à contrôler le disque <span id="nomDisque">--</span></h1>
-        <p>L'analyse lit les programmes sans les lancer. Rien n'est modifié tant que tu ne cliques pas sur Réparer.</p>
+        <p>L'analyse lit les programmes sans les lancer. Rien n'est modifié tant que tu ne cliques pas sur une action.</p>
         <div class="etiquettes mono"><span>EXPIRO</span><span>GRENAM</span><span>PLUGX</span><span>UPX1</span></div>
         <div><button id="bLancer" class="btn prim">Lancer l'analyse</button></div>
       </div>
@@ -57,19 +63,53 @@
         <h1 id="titreResultat"></h1>
         <p id="message" class="message" hidden></p>
         <ul id="points" class="points"></ul>
+        <div id="outilsListe" class="outils-liste">
+          <div id="filtres" class="filtres" role="group" aria-label="Filtrer les fichiers"></div>
+          <input id="recherche" class="recherche" type="search" placeholder="Chercher un fichier" aria-label="Chercher un fichier">
+        </div>
         <div id="liste" class="liste" tabindex="0" aria-label="Fichiers concernés"></div>
         <div class="actions">
           <button id="bReparer" class="btn prim">Réparer et isoler</button>
-          <button id="bRanger" class="btn sec">Ranger RECYCLER.BIN</button>
+          <button id="bRanger" class="btn prim">Ranger RECYCLER.BIN</button>
+          <button id="bBlocage" class="btn prim">Poser le blocage PlugX</button>
+          <button id="bSortir" class="btn prim">Sortir la quarantaine</button>
           <button id="bNouvelle" class="btn sec">Analyser à nouveau</button>
           <button id="bRapport" class="btn sec">Ouvrir le rapport</button>
+        </div>
+        <div class="actions secondaires">
+          <button id="bRemettre" class="btn lien">Remettre la quarantaine</button>
           <button id="bAnnuler" class="btn lien">Annuler la dernière réparation</button>
         </div>
+      </div>
+
+      <div id="ecranQuarantaine" class="ecran" hidden>
+        <h1>Quarantaine de <span id="nomDisqueQ">--</span></h1>
+        <p id="texteQuarantaine"></p>
+        <div id="listeQuarantaine" class="liste" tabindex="0" aria-label="Sessions de quarantaine"></div>
+        <div class="actions"><button id="bActuQ" class="btn sec">Actualiser</button><button id="bVersControle" class="btn sec">Retour au contrôle</button></div>
+      </div>
+
+      <div id="ecranHistorique" class="ecran" hidden>
+        <h1>Historique des contrôles</h1>
+        <div id="listeHistorique" class="liste grande" tabindex="0" aria-label="Rapports"></div>
+        <div class="actions"><button id="bDossierRapports" class="btn sec">Ouvrir le dossier des rapports</button></div>
+      </div>
+
+      <div id="ecranAide" class="ecran" hidden>
+        <h1>Préparer un disque client</h1>
+        <ol class="etapes">
+          <li><strong>Analyser</strong> le disque. Aucun programme n'est lancé.</li>
+          <li><strong>Réparer et isoler</strong> les fichiers touchés.</li>
+          <li><strong>Ranger RECYCLER.BIN</strong> s'il est signalé, ou <strong>poser le blocage PlugX</strong>.</li>
+          <li>Retélécharger ce qui a été isolé, puis <strong>sortir la quarantaine</strong> du disque.</li>
+          <li>Analyser encore. Livre seulement avec le verdict <strong>Prêt</strong>, après avoir lancé quelques jeux.</li>
+        </ol>
+        <p class="note">ROTA Antivirus reconnaît Expiro, Grenam, PlugX et UPX1. Il ne remplace pas un antivirus complet.</p>
       </div>
     </section>
   </main>
 
-  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span>Rien n'est supprimé</span></footer>
+  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span id="notif" role="status"></span><span>Version 1.1.0</span></footer>
 </div>
 <script src="app.js"></script>
 </body>
