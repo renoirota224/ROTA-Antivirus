@@ -448,15 +448,45 @@ public static class Moteur
         return r;
     }
 
+    static string DateSession(string d) { var n = Path.GetFileName(d); return n.Substring(n.IndexOf('-') + 1); }
+
+    static void RemettreRecycler(string racine, string session, ResultatAction r)
+    {
+        string v = Path.Combine(racine, "RECYCLER.BIN"), src = Path.Combine(session, "RECYCLER.BIN"), bloc = Path.Combine(session, "blocage-retire.bin"), inv = Path.Combine(session, "inventaire.tsv");
+        if (Directory.Exists(v)) { r.Echecs++; r.Messages.Add("Échec : un dossier RECYCLER.BIN existe déjà."); return; }
+        bool retire = false;
+        if (File.Exists(v))
+        {
+            if (new FileInfo(v).Length != 0) { r.Echecs++; r.Messages.Add("Échec : le fichier RECYCLER.BIN n'est pas le blocage attendu."); return; }
+            if (File.Exists(bloc)) File.Delete(bloc);
+            File.SetAttributes(v, FileAttributes.Normal); File.Move(v, bloc); retire = true;
+        }
+        try { Directory.Move(src, v); }
+        catch (Exception ex)
+        {
+            if (retire) { File.Move(bloc, v); File.SetAttributes(v, FileAttributes.ReadOnly | FileAttributes.Hidden | FileAttributes.System); }
+            r.Echecs++; r.Messages.Add("Échec : RECYCLER.BIN : " + ex.Message); return;
+        }
+        var apres = Inventaire(v);
+        if (File.Exists(inv) && !File.ReadAllLines(inv, Encoding.UTF8).SequenceEqual(apres)) { r.Echecs++; r.Messages.Add("Échec : RECYCLER.BIN différent après sa remise."); return; }
+        r.Ok += apres.Count;
+    }
+
     public static ResultatAction Annuler(string racineBrute, bool essai = false)
     {
         string racine = Normaliser(racineBrute); if (!essai && EstDisqueSysteme(racine)) throw new InvalidOperationException("Cette action ne travaille que sur un disque externe.");
         var r = new ResultatAction(); var bas = Path.Combine(racine, DossierQuarantaine);
         if (!Directory.Exists(bas)) { r.Messages.Add("Aucune réparation sur ce disque."); return r; }
         var dir = Directory.GetDirectories(bas, "antivirus-*").OrderByDescending(x => x, StringComparer.Ordinal).FirstOrDefault(x => File.Exists(Path.Combine(x, "manifeste.tsv")) && Directory.GetFiles(x, "*.origine").Length > 0);
-        if (dir == null) { r.Messages.Add("Rien à annuler."); return r; }
-        r.Session = dir;
-        foreach (var l in File.ReadAllLines(Path.Combine(dir, "manifeste.tsv"), Encoding.UTF8).Reverse())
+        var rec = Directory.GetDirectories(bas, "recycler-*").OrderByDescending(x => x, StringComparer.Ordinal).FirstOrDefault(x => Directory.Exists(Path.Combine(x, "RECYCLER.BIN")));
+        var lignes = dir == null ? new string[0] : File.ReadAllLines(Path.Combine(dir, "manifeste.tsv"), Encoding.UTF8);
+        bool besoinRecycler = lignes.Any(x => { var c = x.Split('\t'); return c.Length > 2 && c[2].StartsWith("RECYCLER.BIN\\", StringComparison.OrdinalIgnoreCase); });
+        bool remettreRec = rec != null && (dir == null || besoinRecycler || string.CompareOrdinal(DateSession(rec), DateSession(dir)) >= 0);
+        if (dir == null && !remettreRec) { r.Messages.Add("Rien à annuler."); return r; }
+        r.Session = dir ?? rec;
+        // Le dossier RECYCLER.BIN revient d'abord : les fichiers isoles peuvent y retourner.
+        if (remettreRec) RemettreRecycler(racine, rec, r);
+        foreach (var l in lignes.AsEnumerable().Reverse())
         {
             var c = l.Split('\t'); if (c.Length < 8) continue;
             string a = Path.Combine(dir, c[0] + "-a.origine"), bb = Path.Combine(dir, c[0] + "-b.origine"), dst = Path.Combine(racine, c[2]);
@@ -464,6 +494,7 @@ public static class Moteur
             try
             {
                 if (c[1] != "ISOLER" && File.Exists(Long(dst))) { File.SetAttributes(Long(dst), FileAttributes.Normal); File.Move(Long(dst), Long(Path.Combine(dir, c[0] + ".repare"))); }
+                Directory.CreateDirectory(Long(Path.GetDirectoryName(dst)));
                 File.Move(Long(a), Long(dst)); File.SetAttributes(Long(dst), (FileAttributes)(int.Parse(c[3]) & 0x3FFFF));
                 if (c[1] == "GRENAM" && File.Exists(Long(bb))) { var g = Path.Combine(racine, c[4]); File.Move(Long(bb), Long(g)); File.SetAttributes(Long(g), (FileAttributes)(int.Parse(c[5]) & 0x3FFFF)); }
                 r.Ok++;

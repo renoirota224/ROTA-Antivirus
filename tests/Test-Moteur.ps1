@@ -39,8 +39,27 @@ try {
     Test-Point 'Disque Windows refuse' $refus
     Test-Point 'Signature valide reconnue' ([Moteur]::SignatureValide("$env:WINDIR\explorer.exe") -or -not (Get-AuthenticodeSignature "$env:WINDIR\explorer.exe").SignerCertificate -or (Get-AuthenticodeSignature "$env:WINDIR\explorer.exe").SignatureType -eq 'Catalog')
     Test-Point 'Fichier non signe refuse' (-not [Moteur]::SignatureValide("$t\Jeu\notes.txt"))
+
+    # Parcours complet : reparer, ranger, sortir, remettre, puis tout annuler.
+    $b = "$t-b"; [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\1"); [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\DOCS")
+    [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\CEFHelper.exe", 'faux'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\wsc.dll", 'faux2'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\DOCS\doc.bin", 'document')
+    function Get-Empreintes([string]$D) { (Get-ChildItem -LiteralPath "$D\RECYCLER.BIN" -Recurse -Force -File | Sort-Object FullName | ForEach-Object { $_.Name + ':' + (Get-FileHash -LiteralPath $_.FullName).Hash }) -join '|' }
+    $h0 = Get-Empreintes $b
+    $pb = [Moteur]::Analyser($b, $null, [Threading.CancellationToken]::None); [void][Moteur]::Appliquer($pb, $b, $null, $true); [void][Moteur]::RangerRecycler($b, [Moteur]::CompterRecycler($b), $true)
+    Test-Point 'Parcours : blocage en place' ([Moteur]::Etat($b).Blocage)
+    $a1 = [Moteur]::Annuler($b, $true)
+    Test-Point 'Annuler apres Ranger sans echec' ($a1.Echecs -eq 0 -and $a1.Ok -eq 3)
+    Test-Point 'Annuler remet tout a l identique' ((Test-Path -LiteralPath "$b\RECYCLER.BIN" -PathType Container) -and (Get-Empreintes $b) -eq $h0)
+    Remove-Item -LiteralPath "$b\_QUARANTAINE_ROTA" -Recurse -Force
+    $pb = [Moteur]::Analyser($b, $null, [Threading.CancellationToken]::None); [void][Moteur]::Appliquer($pb, $b, $null, $true); [void][Moteur]::RangerRecycler($b, [Moteur]::CompterRecycler($b), $true)
+    [void][Moteur]::SortirQuarantaine($b, "$t-c", $true); $s3 = [Moteur]::RemettreQuarantaine($b, "$t-c", $true)
+    $a2 = [Moteur]::Annuler($b, $true)
+    Test-Point 'Remettre puis Annuler sans echec' ($s3.Ok -gt 0 -and $a2.Echecs -eq 0 -and $a2.Ok -eq 3)
+    Test-Point 'Remettre puis Annuler identique' ((Get-Empreintes $b) -eq $h0)
+    $a3 = [Moteur]::Annuler($b, $true)
+    Test-Point 'Deuxieme annulation sans effet' ($a3.Ok -eq 0 -and $a3.Echecs -eq 0)
 }
 finally {
-    foreach ($x in $t, "$t-q") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
+    foreach ($x in $t, "$t-q", "$t-b", "$t-c") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
 }
 "Echecs : $echecs"; if ($echecs -gt 0) { exit 1 }
