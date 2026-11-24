@@ -22,7 +22,7 @@ public class PlanDisque
 }
 
 public class Avancement { public int Fait, Total, Trouves; public string Courant = "", Phase = ""; public List<string> Cibles = new List<string>(); }
-public class EtatDisque { public bool RecyclerDossier, Blocage, Quarantaine; }
+public class EtatDisque { public bool RecyclerDossier, Blocage, Quarantaine; public int DossiersCaches; public long Libre = long.MaxValue; }
 public class VerdictDisque { public string Niveau = "", Titre = ""; public List<string> Bloquants = new List<string>(), Reserves = new List<string>(); public int ATraiter, AReparer, AIsoler; }
 public class ResultatAction { public int Ok, Echecs; public string Session = ""; public List<string> Messages = new List<string>(); }
 public class InfoQuarantaine { public string Nom = "", Genre = "", Date = ""; public int Fichiers; public long Octets; }
@@ -35,6 +35,53 @@ public static class Moteur
     static readonly string[] NomsPlugX = { "cefhelper.exe", "wsc.dll", "avastauth.dat" };
     static readonly string[] TypesAction = { "REPARER", "REMPLACER", "GRENAM", "ISOLER" };
     static readonly string[] FichiersMemoire = { "pagefile.sys", "swapfile.sys", "hiberfil.sys" };
+    const long PlaceMinimum = 300L * 1024 * 1024;
+
+    // PlugX cache les fichiers du disque dans un dossier dont le nom est fait d'espaces invisibles.
+    static bool NomInvisible(string nom)
+    {
+        return nom.Length > 0 && nom.All(c => char.IsWhiteSpace(c) || c == ' ' || c == '​' || c == '﻿' || c == 'ㅤ');
+    }
+
+    public static List<string> DossiersCaches(string racineBrute)
+    {
+        var racine = Normaliser(racineBrute);
+        return Directory.GetDirectories(Long(racine)).Select(Court).Where(d => NomInvisible(Path.GetFileName(d))).ToList();
+    }
+
+    public static ResultatAction RemettreFichiersCaches(string racineBrute, bool essai = false)
+    {
+        string racine = Normaliser(racineBrute); Refuser(racine, essai); var r = new ResultatAction();
+        var caches = DossiersCaches(racine); if (caches.Count == 0) { r.Messages.Add("Aucun dossier caché sur ce disque."); return r; }
+        var dir = Path.Combine(racine, DossierQuarantaine, "caches-" + DateTime.Now.ToString("yyyyMMdd-HHmmss")); Directory.CreateDirectory(dir); r.Session = dir;
+        var journal = Path.Combine(dir, "deplacements.tsv");
+        foreach (var c in caches)
+        {
+            foreach (var x in Directory.GetFileSystemEntries(Long(c)).Select(Court))
+            {
+                var nom = Path.GetFileName(x); if (string.Equals(nom, "desktop.ini", StringComparison.OrdinalIgnoreCase)) continue;
+                var cible = Path.Combine(racine, nom);
+                for (int k = 2; File.Exists(Long(cible)) || Directory.Exists(Long(cible)); k++) cible = Path.Combine(racine, Path.GetFileNameWithoutExtension(nom) + " (récupéré " + k + ")" + Path.GetExtension(nom));
+                try
+                {
+                    if (Directory.Exists(Long(x))) Directory.Move(Long(x), Long(cible)); else File.Move(Long(x), Long(cible));
+                    File.AppendAllText(journal, Relatif(x, racine) + "\t" + Relatif(cible, racine) + "\r\n", new UTF8Encoding(false)); r.Ok++;
+                }
+                catch (Exception ex) { r.Echecs++; r.Messages.Add("Échec : " + nom + " : " + ex.Message); }
+            }
+            try
+            {
+                if (Directory.GetFileSystemEntries(Long(c)).All(x => string.Equals(Path.GetFileName(x), "desktop.ini", StringComparison.OrdinalIgnoreCase)))
+                {
+                    foreach (var f in Directory.GetFiles(Long(c))) { File.SetAttributes(f, FileAttributes.Normal); File.Move(f, Long(Path.Combine(dir, "desktop.ini"))); }
+                    File.SetAttributes(Long(c), FileAttributes.Directory); Directory.Delete(Long(c));
+                }
+            }
+            catch (Exception ex) { r.Messages.Add("Le dossier caché vide est resté : " + ex.Message); }
+        }
+        r.Messages.Add("Tes fichiers sont de nouveau visibles à la racine.");
+        return r;
+    }
 
     // Sur le disque de Windows, seuls les dossiers personnels peuvent etre repares pendant que Windows tourne.
     public static bool ReparableSurSysteme(string relatif)
@@ -272,7 +319,11 @@ public static class Moteur
             if ((rel.StartsWith("RECYCLER.BIN\\", StringComparison.OrdinalIgnoreCase) || rel.IndexOf("\\RECYCLER.BIN\\", StringComparison.OrdinalIgnoreCase) >= 0) && NomsPlugX.Contains(f.Nom.ToLowerInvariant())) { brut.Add(Element("ISOLER", f, racine, "Fichier PlugX", null)); continue; }
             if (f.Ext == ".lnk")
             {
-                if (string.Equals(f.Dossier.TrimEnd('\\'), racine.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) { try { if (LnkPiege(f)) brut.Add(Element("ISOLER", f, racine, "Faux raccourci du virus", null)); } catch { } }
+                if (string.Equals(f.Dossier.TrimEnd('\\'), racine.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                {
+                    try { if (LnkPiege(f)) brut.Add(Element("ISOLER", f, racine, "Faux raccourci du virus", null)); }
+                    catch (Exception ex) { if (ex.Message.IndexOf("virus", StringComparison.OrdinalIgnoreCase) >= 0) brut.Add(Element("A_VERIFIER", f, racine, "Faux raccourci bloqué par Windows Defender : ne l'ouvre pas, laisse Defender le supprimer", null)); }
+                }
                 continue;
             }
             if (!ExtensionsPe.Contains(f.Ext) || f.Taille > TailleMax) continue;
@@ -308,7 +359,7 @@ public static class Moteur
                 brut.Add(pb != "" ? Element("RETELECHARGER", f, racine, pb, null) : Element("REPARER", f, racine, etat, null));
             }
             catch (OperationCanceledException) { throw; }
-            catch (Exception ex) { brut.Add(Element("A_VERIFIER", f, racine, ex.Message.IndexOf("virus", StringComparison.OrdinalIgnoreCase) >= 0 ? "Bloqué par l'antivirus" : "Illisible : " + ex.GetType().Name, null)); }
+            catch (Exception ex) { brut.Add(Element("A_VERIFIER", f, racine, ex.Message.IndexOf("virus", StringComparison.OrdinalIgnoreCase) >= 0 ? "Bloqué par Windows Defender : ne l'ouvre pas, laisse Defender le supprimer" : "Illisible : " + ex.GetType().Name, null)); }
         }
         foreach (var e in brut.Where(x => x.Type == "GRENAM"))
         {
@@ -332,7 +383,10 @@ public static class Moteur
     {
         string racine = Normaliser(racineBrute), r = Path.Combine(racine, "RECYCLER.BIN"); var e = new EtatDisque();
         e.RecyclerDossier = Directory.Exists(r); if (File.Exists(r)) e.Blocage = new FileInfo(r).Length == 0;
-        e.Quarantaine = Directory.Exists(Path.Combine(racine, DossierQuarantaine)); return e;
+        e.Quarantaine = Directory.Exists(Path.Combine(racine, DossierQuarantaine));
+        try { e.DossiersCaches = DossiersCaches(racine).Count; } catch { }
+        try { e.Libre = new DriveInfo(Path.GetPathRoot(racine)).AvailableFreeSpace; } catch { }
+        return e;
     }
 
     public static bool EstDisqueSysteme(string racine)
@@ -349,6 +403,8 @@ public static class Moteur
         foreach (var k in new[] { "REPARER", "REMPLACER", "GRENAM", "ISOLER", "RETELECHARGER", "A_VERIFIER" })
         { int n = p.Elements.Count(x => x.Type == k); if (n > 0) v.Bloquants.Add(n + " fichier(s) : " + Libelle(k)); }
         if (e.RecyclerDossier) v.Bloquants.Add("Dossier RECYCLER.BIN présent (PlugX) : à ranger.");
+        if (e.DossiersCaches > 0) v.Bloquants.Add(e.DossiersCaches + " dossier(s) caché(s) par PlugX : tes fichiers sont dedans, clique sur Remettre les fichiers cachés.");
+        if (!systeme && e.Libre < PlaceMinimum) v.Bloquants.Add("Disque presque plein (" + (e.Libre / 1048576) + " Mo libres) : sors la quarantaine pour libérer de la place, puis répare.");
         if (!systeme)
         {
             if (e.Quarantaine) v.Bloquants.Add("Dossier _QUARANTAINE_ROTA présent : il ne doit jamais partir chez un client.");
@@ -417,7 +473,10 @@ public static class Moteur
                 if (o == null) { if (e.Type == "GRENAM") o = brut; else throw new IOException("plus rien à corriger"); }
                 if (e.Type == "REPARER") { var pb = Probleme(o); if (pb != "") throw new IOException(pb); }
             }
-            hAvant = Empreinte(brut); hApres = Empreinte(o); EcrireVerifie(tmp, o);
+            hAvant = Empreinte(brut); hApres = Empreinte(o);
+            long libre = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(e.Chemin))).AvailableFreeSpace;
+            if (libre < o.Length + 64L * 1024 * 1024) throw new IOException("pas assez de place sur le disque (" + (libre / 1048576) + " Mo libres) : sors la quarantaine, puis recommence");
+            EcrireVerifie(tmp, o);
         }
         File.AppendAllText(manifeste, string.Join("\t", new[] { id, e.Type, Champ(e.Relatif), e.Attr.ToString(), Champ(e.RelatifG), e.AttrG.ToString(), hAvant, hApres }) + "\r\n", new UTF8Encoding(false));
         bool b1 = false, b2 = false;

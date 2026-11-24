@@ -109,6 +109,7 @@ namespace RotaAntivirus
                 case "isoler": if (!occupe && DisqueConnu(disque) && plan != null && string.Equals(disqueAnalyse, disque, StringComparison.OrdinalIgnoreCase)) Isoler(disque); break;
                 case "ranger": if (!occupe && PeutEcrire(disque)) Ranger(disque); break;
                 case "blocage": if (!occupe && PeutEcrire(disque)) Blocage(disque); break;
+                case "caches": if (!occupe && PeutEcrire(disque)) Caches(disque); break;
                 case "sortir": if (!occupe && PeutEcrire(disque)) Sortir(disque); break;
                 case "remettre": if (!occupe && Externe(disque)) Remettre(disque); break;
                 case "annuler": if (!occupe && DisqueConnu(disque)) AnnulerReparation(disque); break;
@@ -182,7 +183,7 @@ namespace RotaAntivirus
                 Envoyer(new
                 {
                     type = "resultat", disque = disque, niveau = v.Niveau, titre = v.Titre, bloquants = v.Bloquants, reserves = v.Reserves, aTraiter = v.ATraiter, aReparer = v.AReparer, aIsoler = v.AIsoler,
-                    total = p.Total, examines = p.Examines, systeme = systeme, recycler = etat.RecyclerDossier, blocage = etat.Blocage, quarantaine = etat.Quarantaine, archive = archive, annulable = Moteur.PeutAnnuler(disque),
+                    total = p.Total, examines = p.Examines, systeme = systeme, recycler = etat.RecyclerDossier, blocage = etat.Blocage, quarantaine = etat.Quarantaine, caches = etat.DossiersCaches, archive = archive, annulable = Moteur.PeutAnnuler(disque),
                     message = messageAvant, tronque = p.Elements.Count > MaxLignes, nbElements = p.Elements.Count,
                     elements = lignes.Select((x, i) => new { index = i.ToString(), type = x.Type, libelle = Moteur.Libelle(x.Type), relatif = x.Relatif, detail = x.Detail }).ToList()
                 });
@@ -237,6 +238,12 @@ namespace RotaAntivirus
         {
             if (!Confirmer("Poser le blocage PlugX sur " + disque + " ?\n\nUn petit fichier vide et protégé nommé RECYCLER.BIN sera créé à la racine.")) return;
             Action2("Pose du blocage", "Blocage", disque, () => Moteur.PoserBlocageDisque(disque));
+        }
+
+        void Caches(string disque)
+        {
+            if (!Confirmer("Remettre à la racine de " + disque + " les fichiers que PlugX a cachés ?\n\nRien n'est supprimé ni ouvert. Les fichiers sont seulement déplacés pour redevenir visibles.\nSi un nom existe déjà, le fichier reçoit le nom « (récupéré) ».\n\nContinuer ?")) return;
+            Action2("Remise des fichiers cachés", "Fichiers remis", disque, () => Moteur.RemettreFichiersCaches(disque));
         }
 
         void Sortir(string disque)

@@ -1,4 +1,4 @@
-# Teste le moteur sur un faux disque cree dans un dossier temporaire. Aucun vrai disque n'est modifie.
+﻿# Teste le moteur sur un faux disque cree dans un dossier temporaire. Aucun vrai disque n'est modifie.
 $ErrorActionPreference = 'Stop'
 $src = Join-Path $PSScriptRoot '..\src\RotaAntivirus\Moteur'
 Add-Type -ReferencedAssemblies System.Numerics, System.Core, System.Linq -Path (Join-Path $src 'Reparateur.cs'), (Join-Path $src 'Moteur.cs')
@@ -63,6 +63,20 @@ try {
     $vm = [Moteur]::Verdict($pm, (New-Object EtatDisque), $false)
     Test-Point 'Comptes Reparer 2 et Isoler 1' ($vm.AReparer -eq 2 -and $vm.AIsoler -eq 1 -and $vm.ATraiter -eq 3)
 
+    # Dossier cache par PlugX (nom fait d'un espace insecable).
+    # Windows retire les espaces en fin de nom : le prefixe \\?\ garde le vrai nom, comme le fait le moteur.
+    $e = "$t-e"; $cache = '\\?\' + $e + '\' + [string][char]0x00A0; [void][IO.Directory]::CreateDirectory("$cache\Mes jeux"); [IO.File]::WriteAllText("$cache\photo.jpg", 'image'); [IO.File]::WriteAllText("$cache\Mes jeux\save.dat", 'partie'); [IO.File]::WriteAllText("$e\photo.jpg", 'deja la'); [IO.File]::WriteAllText("$cache\desktop.ini", 'x')
+    [IO.File]::SetAttributes($cache, [IO.FileAttributes]'Hidden, System, Directory')
+    Test-Point 'Dossier cache detecte' ([Moteur]::Etat($e).DossiersCaches -eq 1)
+    $vc = [Moteur]::Verdict((New-Object PlanDisque), [Moteur]::Etat($e), $false)
+    Test-Point 'Dossier cache bloque la livraison' (@($vc.Bloquants | Where-Object { $_ -like '*caché*' }).Count -eq 1)
+    $rc = [Moteur]::RemettreFichiersCaches($e, $true)
+    Test-Point 'Fichiers caches remis' ($rc.Ok -eq 2 -and $rc.Echecs -eq 0 -and (Test-Path -LiteralPath "$e\Mes jeux\save.dat"))
+    Test-Point 'Nom deja pris garde les deux fichiers' ((Get-Content -LiteralPath "$e\photo.jpg") -eq 'deja la' -and (Get-Content -LiteralPath "$e\photo (récupéré 2).jpg") -eq 'image')
+    Test-Point 'Dossier cache vide retire' ([Moteur]::Etat($e).DossiersCaches -eq 0 -and -not [IO.Directory]::Exists($cache))
+    $ep = New-Object EtatDisque; $ep.Libre = 10MB; $vp = [Moteur]::Verdict((New-Object PlanDisque), $ep, $false)
+    Test-Point 'Disque plein signale' (@($vp.Bloquants | Where-Object { $_ -like 'Disque presque plein*' }).Count -eq 1)
+
     # Parcours complet : reparer, ranger, sortir, remettre, puis tout annuler.
     $b = "$t-b"; [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\1"); [void](New-Item -ItemType Directory -Path "$b\RECYCLER.BIN\DOCS")
     [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\CEFHelper.exe", 'faux'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\1\wsc.dll", 'faux2'); [IO.File]::WriteAllText("$b\RECYCLER.BIN\DOCS\doc.bin", 'document')
@@ -83,6 +97,6 @@ try {
     Test-Point 'Deuxieme annulation sans effet' ($a3.Ok -eq 0 -and $a3.Echecs -eq 0)
 }
 finally {
-    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
+    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d", "$t-e") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
 }
 "Echecs : $echecs"; if ($echecs -gt 0) { exit 1 }
