@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROTA Antivirus</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app" class="app">
+  <div class="grille" aria-hidden="true"></div>
+  <div class="halo" aria-hidden="true"></div>
+  <header class="dessus entete">
+    <div class="marque">
+      <svg width="38" height="38" viewBox="0 0 38 38" fill="none" aria-hidden="true"><path class="trait" d="M19 2 34 8v11c0 9-6 14-15 17C10 33 4 28 4 19V8Z" stroke-width="2"/><path d="M13 27V12h7a4.5 4.5 0 0 1 1 8.9L26 27M13 20h8" stroke="#EEF4FF" stroke-width="2"/></svg>
+      <div><div class="nom">ROTA ANTIVIRUS</div><div class="mono sous">Contrôle des disques RotaGaming</div></div>
+    </div>
+    <div class="choix"><span class="mono sous">DISQUE</span><div id="disques" class="choix" role="group" aria-label="Choix du disque"></div></div>
+  </header>
+
+  <main class="dessus principal">
+    <div class="zone-noyau">
+      <div id="noyau" class="noyau">
+        <svg viewBox="0 0 460 460" fill="none" aria-hidden="true">
+          <g class="r1"><circle class="trait faible" cx="230" cy="230" r="218" stroke-dasharray="2 9" stroke-width="2"/><path class="trait" d="M230 12a218 218 0 0 1 154 64" stroke-width="3"/><path class="trait" d="M230 448a218 218 0 0 1-154-64" stroke-width="3"/></g>
+          <g class="r2"><circle cx="230" cy="230" r="182" stroke="#BFE4FF" stroke-opacity=".22"/><path class="trait" d="M412 230a182 182 0 0 1-53 129" stroke-width="7"/><path class="trait" d="M48 230a182 182 0 0 1 53-129" stroke-width="7"/></g>
+          <g class="r3"><circle class="trait faible" cx="230" cy="230" r="148" stroke-dasharray="26 16" stroke-width="2"/></g>
+          <g class="balai"><path class="remplir" d="M230 230 230 62A168 168 0 0 1 349 111Z"/><path class="trait" d="M230 230V62" stroke-width="2"/></g>
+          <circle class="trait moyen fond-noyau" cx="230" cy="230" r="118"/>
+          <circle class="point plein" cx="118" cy="128" r="4"/><circle class="point b plein" cx="356" cy="164" r="3"/><circle class="point c plein" cx="316" cy="356" r="4"/>
+        </svg>
+        <div class="centre"><div id="coeurHaut" class="mono coeur-haut">SYSTÈME</div><div id="coeurValeur" class="coeur-valeur">--</div><div id="coeurBas" class="coeur-bas">En attente</div></div>
+      </div>
+    </div>
+
+    <section class="vitre panneau" aria-live="polite">
+      <div id="ecranAccueil" class="ecran">
+        <h1>Prêt à contrôler le disque <span id="nomDisque">--</span></h1>
+        <p>L'analyse lit les programmes sans les lancer. Rien n'est modifié tant que tu ne cliques pas sur Réparer.</p>
+        <div class="etiquettes mono"><span>EXPIRO</span><span>GRENAM</span><span>PLUGX</span><span>UPX1</span></div>
+        <div><button id="bLancer" class="btn prim">Lancer l'analyse</button></div>
+      </div>
+
+      <div id="ecranAnalyse" class="ecran" hidden>
+        <h1 id="titreAnalyse">Analyse en cours</h1>
+        <div id="piste" class="piste" role="progressbar" aria-label="Progression" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="jauge" class="jauge"></div></div>
+        <div class="compteurs">
+          <div class="compteur"><div>Programmes lus</div><div id="lus" class="mono">0</div></div>
+          <div class="compteur"><div>À traiter</div><div id="trouves" class="mono alerte-texte">0</div></div>
+        </div>
+        <div id="courant" class="mono courant"></div>
+        <div><button id="bArreter" class="btn sec">Arrêter</button></div>
+      </div>
+
+      <div id="ecranResultat" class="ecran" hidden>
+        <h1 id="titreResultat"></h1>
+        <p id="message" class="message" hidden></p>
+        <ul id="points" class="points"></ul>
+        <div id="liste" class="liste" tabindex="0" aria-label="Fichiers concernés"></div>
+        <div class="actions">
+          <button id="bReparer" class="btn prim">Réparer et isoler</button>
+          <button id="bRanger" class="btn sec">Ranger RECYCLER.BIN</button>
+          <button id="bNouvelle" class="btn sec">Analyser à nouveau</button>
+          <button id="bRapport" class="btn sec">Ouvrir le rapport</button>
+          <button id="bAnnuler" class="btn lien">Annuler la dernière réparation</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="dessus mono pied"><span id="infos">Aucun programme du disque n'est lancé</span><span>Rien n'est supprimé</span></footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+name: Fabrication
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Choisir la version
+        id: version
+        shell: pwsh
+        run: |
+          $v = '1.0.0'
+          if ($env:GITHUB_REF -match '^refs/tags/v(\d+\.\d+\.\d+)$') { $v = $Matches[1] }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Tester le moteur
+        shell: powershell
+        run: ./tests/Test-Moteur.ps1
+
+      - name: Compiler
+        shell: pwsh
+        run: dotnet publish src/RotaAntivirus/RotaAntivirus.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ steps.version.outputs.version }} -o publish
+
+      - name: Telecharger le composant WebView2
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force redist | Out-Null
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile redist/MicrosoftEdgeWebview2Setup.exe
+          $s = Get-AuthenticodeSignature redist/MicrosoftEdgeWebview2Setup.exe
+          if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Signature WebView2 invalide' }
+
+      - name: Installer Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
+
+      - name: Fabriquer le Setup
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyVersion=${{ steps.version.outputs.version }}" installer/RotaAntivirus.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Echec Inno Setup' }
+          Get-ChildItem dist/*.exe | ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash, $_.Name } | Set-Content dist/SHA256.txt -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ROTA-Antivirus-Setup
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ROTA-Antivirus-Setup
+          path: dist
+      - name: Publier la version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "ROTA Antivirus ${{ needs.build.outputs.version }}" --generate-notes

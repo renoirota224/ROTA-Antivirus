@@ -1,0 +1,10 @@
+bin/
+obj/
+publish/
+dist/
+redist/
+.vs/
+*.user
+_QUARANTAINE_ROTA/
+*.origine
+*.echec
