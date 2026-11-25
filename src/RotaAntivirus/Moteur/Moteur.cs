@@ -167,6 +167,28 @@ public static class Moteur
         catch { return false; }
     }
 
+    // Ver Ground : un faux programme qui prend la place du vrai fichier, renomme en « g... » et cache.
+    // Il se camoufle souvent derriere un nom comme Jeu.exe.cat, Jeu.exe.cfg ou Jeu.exe.lnk.
+    static readonly System.Text.RegularExpressions.Regex NomCamoufle = new System.Text.RegularExpressions.Regex(@"\.(exe|scr|com|dll)\.[a-z0-9_-]{1,12}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    static bool Camoufle(string nom) { return NomCamoufle.IsMatch(nom); }
+
+    static int Chercher(byte[] b, byte[] m)
+    {
+        for (int i = 0; i + m.Length <= b.Length; i++)
+        {
+            int k = 0; while (k < m.Length && (b[i + k] | 0x20) == (m[k] | 0x20)) k++;
+            if (k == m.Length) return i;
+        }
+        return -1;
+    }
+
+    static readonly byte[] MarqueGroundA = Encoding.ASCII.GetBytes(@"\Windows\Ground"), MarqueGroundU = Encoding.Unicode.GetBytes(@"\Windows\Ground");
+    public static bool EstGround(byte[] b)
+    {
+        if (b == null || b.Length < 1024 || b[0] != 0x4D || b[1] != 0x5A) return false;
+        return Chercher(b, MarqueGroundA) >= 0 || Chercher(b, MarqueGroundU) >= 0;
+    }
+
     static string Probleme(byte[] o, byte[] infecte)
     {
         try
@@ -286,12 +308,19 @@ public static class Moteur
                     // Les raccourcis d'applications Windows et les fichiers de memoire ne sont pas de vrais programmes a lire.
                     if ((i.Attributes & FileAttributes.ReparsePoint) != 0) continue;
                     if (string.Equals(Path.GetDirectoryName(p).TrimEnd('\\'), racine.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) && FichiersMemoire.Contains(i.Name.ToLowerInvariant())) continue;
-                    if (ExtensionsPe.Contains(ext) || ext == ".lnk" || ext == ".dat")
+                    if (ExtensionsPe.Contains(ext) || ext == ".lnk" || ext == ".dat" || Camoufle(i.Name))
                         l.Add(new Fichier { Chemin = p, Nom = i.Name, Ext = ext, Taille = ((FileInfo)i).Length, Attr = (int)i.Attributes & 0x3FFFF, Dossier = Path.GetDirectoryName(p) });
                 }
             }
         }
         return l;
+    }
+
+    static void AjouterGround(Fichier f, string racine, Dictionary<string, Fichier> parChemin, List<ElementPlan> brut, HashSet<string> sourcesG)
+    {
+        var cheminG = Path.Combine(f.Dossier, "g" + f.Nom);
+        if (parChemin.ContainsKey(cheminG)) { sourcesG.Add(cheminG); brut.Add(Element("GRENAM", f, racine, "Ver Ground : remplacé par le vrai fichier caché " + Path.GetFileName(cheminG), parChemin[cheminG])); }
+        else brut.Add(Element("ISOLER", f, racine, "Ver Ground sans vrai fichier caché : à recopier depuis une copie saine", null));
     }
 
     static ElementPlan Element(string type, Fichier f, string racine, string detail, Fichier g)
@@ -324,6 +353,13 @@ public static class Moteur
             if (suivi != null && (DateTime.UtcNow - dernier).TotalMilliseconds > 150) { dernier = DateTime.UtcNow; suivi(new Avancement { Phase = "Analyse", Fait = n, Total = liste.Count, Trouves = brut.Count(x => x.Type != "RESTE"), Courant = Relatif(f.Chemin, racine), Cibles = brut.Where(x => x.Type != "RESTE").Reverse().Take(8).Select(x => x.Type + "|" + x.Relatif).ToList() }); }
             var rel = Relatif(f.Chemin, racine);
             if ((rel.StartsWith("RECYCLER.BIN\\", StringComparison.OrdinalIgnoreCase) || rel.IndexOf("\\RECYCLER.BIN\\", StringComparison.OrdinalIgnoreCase) >= 0) && NomsPlugX.Contains(f.Nom.ToLowerInvariant())) { brut.Add(Element("ISOLER", f, racine, "Fichier PlugX", null)); continue; }
+            if (Camoufle(f.Nom))
+            {
+                if (f.Taille < 1024 || f.Taille > 64L * 1024 * 1024) continue;
+                try { if (EstGround(File.ReadAllBytes(Long(f.Chemin)))) AjouterGround(f, racine, parChemin, brut, sourcesG); }
+                catch (Exception ex) { if (ex.Message.IndexOf("virus", StringComparison.OrdinalIgnoreCase) >= 0) brut.Add(Element("A_VERIFIER", f, racine, "Faux fichier bloqué par Windows Defender : ne l'ouvre pas, laisse Defender le supprimer", null)); }
+                continue;
+            }
             if (f.Ext == ".lnk")
             {
                 if (string.Equals(f.Dossier.TrimEnd('\\'), racine.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
@@ -340,7 +376,9 @@ public static class Moteur
                 bool marque = Marque(info) != null || info.Upx1 || Reparateur.FichierForme2(Long(f.Chemin));
                 var cheminG = Path.Combine(f.Dossier, "g" + f.Nom); bool aG = f.Ext == ".exe" && parChemin.ContainsKey(cheminG);
                 if (!marque && !aG && !(f.Ext == ".exe" && f.Taille <= 2 * 1024 * 1024)) continue;
-                var b = File.ReadAllBytes(Long(f.Chemin)); string etat; var o = Reparateur.Nettoyer(b, out etat); var courant = o ?? b;
+                var b = File.ReadAllBytes(Long(f.Chemin));
+                if (EstGround(b)) { AjouterGround(f, racine, parChemin, brut, sourcesG); continue; }
+                string etat; var o = Reparateur.Nettoyer(b, out etat); var courant = o ?? b;
                 if (etat.Contains("forme 2"))
                 {
                     if (index == null) index = IndexOfficiel();
@@ -376,6 +414,7 @@ public static class Moteur
                 var bg = File.ReadAllBytes(Long(e.CheminG)); string etat; var og = Reparateur.Nettoyer(bg, out etat);
                 if (og != null) pb = Probleme(og, bg); else if (etat.StartsWith("non repare")) pb = etat;
                 if (pb == "" && FauxGrenam(og ?? bg)) pb = "original lui-même faux";
+                if (pb == "" && EstGround(bg)) pb = "original lui-même infecté par le ver Ground";
             }
             catch (Exception ex) { pb = ex.Message.IndexOf("virus", StringComparison.OrdinalIgnoreCase) >= 0 ? "original bloqué par l'antivirus" : "original illisible"; }
             if (pb != "") { sourcesG.Remove(e.CheminG); e.Type = "ISOLER"; e.Detail = "Faux programme isolé, à retélécharger (original inutilisable : " + pb + ")"; e.CheminG = ""; e.RelatifG = ""; e.AttrG = 0; }
@@ -419,7 +458,7 @@ public static class Moteur
         }
         int inerte = p.Elements.Count(x => x.Type == "RESTE");
         if (inerte > 0) v.Reserves.Add(inerte + " fichier(s) avec une marque inerte : teste ces jeux.");
-        v.Reserves.Add("Ce contrôle reconnaît Expiro, Grenam, PlugX et UPX1, pas tous les virus.");
+        v.Reserves.Add("Ce contrôle reconnaît Expiro, Grenam, Ground, PlugX et UPX1, pas tous les virus.");
         v.Reserves.Add("Lance quelques jeux avant de livrer.");
         v.ATraiter = p.Elements.Count(x => TypesAction.Contains(x.Type) && (!systeme || ReparableSurSysteme(x.Relatif)));
         v.AIsoler = p.Elements.Count(x => x.Type == "ISOLER" && (!systeme || ReparableSurSysteme(x.Relatif)));
@@ -675,7 +714,7 @@ public static class Moteur
             if (info.Length <= 256L * 1024 * 1024 && ExtensionsPe.Contains(Path.GetExtension(f).ToLowerInvariant()))
             {
                 var b = File.ReadAllBytes(Long(f)); string etat;
-                if (Reparateur.Nettoyer(b, out etat) != null || Reparateur.EstForme2(b) || FauxGrenam(b)) { infectes.Add(f.Substring(d.Length + 1)); continue; }
+                if (Reparateur.Nettoyer(b, out etat) != null || Reparateur.EstForme2(b) || FauxGrenam(b) || EstGround(b)) { infectes.Add(f.Substring(d.Length + 1)); continue; }
                 empreinte = Empreinte(b);
             }
             else empreinte = EmpreinteFichier(f);
@@ -755,7 +794,7 @@ public static class Moteur
         Directory.CreateDirectory(dossier); string racine = Normaliser(disque), nomVol = "", taille = "";
         try { var di = new DriveInfo(racine); nomVol = di.VolumeLabel; taille = (di.TotalSize / 1073741824) + " Go"; } catch { }
         var date = DateTime.Now; var serie = SerieDisque(racine);
-        var controles = new List<string> { "Moteur ROTA : Expiro, Grenam, PlugX et UPX1" };
+        var controles = new List<string> { "Moteur ROTA : Expiro, Grenam, Ground, PlugX et UPX1" };
         if (p.DefenderFait) controles.Add("Windows Defender : analyse complète du disque");
         if (p.BibliothequeFaite) controles.Add("Bibliothèque RotaGaming : programmes comparés aux copies maîtres");
         string id; using (var s = SHA256.Create()) id = BitConverter.ToString(s.ComputeHash(Encoding.UTF8.GetBytes(serie + "|" + client + "|" + date.ToString("o") + "|" + p.Examines))).Replace("-", "").Substring(0, 12);

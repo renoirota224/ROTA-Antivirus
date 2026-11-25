@@ -143,8 +143,28 @@ try {
     Test-Point 'Remettre puis Annuler identique' ((Get-Empreintes $b) -eq $h0)
     $a3 = [Moteur]::Annuler($b, $true)
     Test-Point 'Deuxieme annulation sans effet' ($a3.Ok -eq 0 -and $a3.Echecs -eq 0)
+
+    # Ver Ground camoufle derriere .exe.cat, .exe.cfg, .exe.lnk : le vrai fichier est cache sous « g... ».
+    $w = "$t-gr"; [void](New-Item -ItemType Directory -Path "$w\Jeu\Binaries")
+    $ver = [byte[]](@(0x4D, 0x5A) + (,0 * 600) + [Text.Encoding]::ASCII.GetBytes('C:\Windows\Ground\svchost.exe') + (,0 * 3000))
+    [IO.File]::WriteAllBytes("$w\Jeu\Binaries\Jeu.exe.cat", $ver); [IO.File]::WriteAllText("$w\Jeu\Binaries\gJeu.exe.cat", 'vrai fichier du jeu'); [IO.File]::SetAttributes("$w\Jeu\Binaries\gJeu.exe.cat", 'Hidden, System')
+    [IO.File]::WriteAllBytes("$w\Jeu\Jeu.exe.lnk", $ver); [IO.File]::WriteAllText("$w\Jeu\gJeu.exe.lnk", 'vrai raccourci')
+    [IO.File]::WriteAllBytes("$w\Jeu\Outil.exe.cfg", $ver)
+    [IO.File]::WriteAllText("$w\Jeu\App.exe.config", '<configuration></configuration>')
+    $pw = [Moteur]::Analyser($w, $null, [Threading.CancellationToken]::None)
+    Test-Point 'Ground camoufle : 2 vrais fichiers a remettre' (@($pw.Elements | Where-Object { $_.Type -eq 'GRENAM' }).Count -eq 2)
+    Test-Point 'Ground sans original : a isoler' (@($pw.Elements | Where-Object { $_.Type -eq 'ISOLER' -and $_.Relatif -like '*Outil.exe.cfg' }).Count -eq 1)
+    Test-Point 'Vrai .exe.config ignore' (@($pw.Elements | Where-Object { $_.Relatif -like '*App.exe.config' -or $_.Relatif -like '*gJeu*' }).Count -eq 0)
+    $hw = (Get-ChildItem -LiteralPath $w -Recurse -Force -File | Sort-Object FullName | ForEach-Object { $_.Name + ':' + (Get-FileHash -LiteralPath $_.FullName).Hash }) -join '|'
+    $rw = [Moteur]::Appliquer($pw, $w, $null, $true, 'reparer'); $iw = [Moteur]::Appliquer($pw, $w, $null, $true, 'isoler')
+    Test-Point 'Ground : vrai fichier remis a sa place' ($rw.Echecs -eq 0 -and $rw.Ok -eq 2 -and [IO.File]::ReadAllText("$w\Jeu\Binaries\Jeu.exe.cat") -eq 'vrai fichier du jeu' -and -not (Test-Path -LiteralPath "$w\Jeu\Binaries\gJeu.exe.cat"))
+    Test-Point 'Ground : faux fichier isole' ($iw.Ok -eq 1 -and -not (Test-Path -LiteralPath "$w\Jeu\Outil.exe.cfg"))
+    Test-Point 'Ground : plus rien apres nettoyage' (@([Moteur]::Analyser($w, $null, [Threading.CancellationToken]::None).Elements).Count -eq 0)
+    [void][Moteur]::Annuler($w, $true); [void][Moteur]::Annuler($w, $true)
+    $hw2 = (Get-ChildItem -LiteralPath $w -Recurse -Force -File | Where-Object { $_.FullName -notlike '*_QUARANTAINE_ROTA*' } | Sort-Object FullName | ForEach-Object { $_.Name + ':' + (Get-FileHash -LiteralPath $_.FullName).Hash }) -join '|'
+    Test-Point 'Ground : annuler remet tout' ($hw2 -eq $hw)
 }
 finally {
-    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d", "$t-e", "$t-f", "$t-fa", "$t-m", "$t-bib", "$t-g", "$t-cert") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
+    foreach ($x in $t, "$t-q", "$t-b", "$t-c", "$t-d", "$t-e", "$t-f", "$t-fa", "$t-m", "$t-bib", "$t-g", "$t-cert", "$t-gr") { if (Test-Path -LiteralPath $x) { Get-ChildItem -LiteralPath $x -Recurse -Force | ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }; Remove-Item -LiteralPath $x -Recurse -Force -Confirm:$false } }
 }
 "Echecs : $echecs"; if ($echecs -gt 0) { exit 1 }

@@ -17,7 +17,7 @@ Branche une clé **vide**, lance `tests\Preparer-Cle-Test.bat`, puis contrôle l
 
 ## Limites
 
-ROTA Antivirus reconnaît seulement Expiro, Grenam, PlugX et la forme UPX1 étudiés par RotaGaming. Il ne remplace pas un antivirus complet. Un verdict « Prêt » ne prouve pas qu'un disque est sans aucun virus.
+ROTA Antivirus reconnaît seulement Expiro, Grenam, le ver Ground, PlugX et la forme UPX1 étudiés par RotaGaming. Il ne remplace pas un antivirus complet. Un verdict « Prêt » ne prouve pas qu'un disque est sans aucun virus.
 
 Le dossier `_QUARANTAINE_ROTA` contient des fichiers infectés inactifs. Il ne doit jamais être copié chez un client.
 
